@@ -6,6 +6,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from wizard.plotting import spatial_filter_and_plot
+from wizard.metadata import load_and_process_metadata
+from wizard.king_gizzard import categorize_files
 
 def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
     """

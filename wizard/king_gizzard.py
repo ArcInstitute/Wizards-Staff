@@ -3,9 +3,11 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore
 from tqdm import tqdm
-from lizard-wizard-analyzer.spatial_filtering import spatial_filter_and_plot
-from lizard_wizard.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics
-from lizard_wizard.plots import plot_kmeans_heatmap, plot_cluster_activity
+from collections import defaultdict
+from wizard.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
+from wizard.plotting import plot_kmeans_heatmap, plot_cluster_activity, spatial_filter_and_plot, plot_activity_map
+from wizard.pwc import lizard_wizard_pwc
+from wizard.metadata import append_metadata_to_dfs
 
 def categorize_files(results_folder):
     """
