@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore
 from tqdm import tqdm
-from lizard_wizard.spatial_filtering import spatial_filter_and_plot
+from lizard-wizard-analyzer.spatial_filtering import spatial_filter_and_plot
 from lizard_wizard.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics
 from lizard_wizard.plots import plot_kmeans_heatmap, plot_cluster_activity
 
