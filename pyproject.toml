@@ -106,11 +106,11 @@ zipp = "^3.19.2"
 
 # Pip dependencies
 [tool.poetry.extras]
-aicspylibczi = "^3.1.2"
-build = "^1.2.1"
-czifile = "^2019.7.2"
-poetry-core = "^1.9.0"
-xmltodict = "^0.13.0"
+aicspylibczi = ["aicspylibczi"]
+build = ["build"]
+czifile = ["czifile"]
+poetry-core = ["poetry-core"]
+xmltodict = ["xmltodict"]
 
 [build-system]
 requires = ["poetry-core"]
