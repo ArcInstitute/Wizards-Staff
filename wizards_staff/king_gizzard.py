@@ -64,7 +64,7 @@ def categorize_files(results_folder):
     return categorized_files
 
 
-def king_gizzard(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./lizard_wizard_outputs'):
+def wizards_staff_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./lizard_wizard_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     
