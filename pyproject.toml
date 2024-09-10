@@ -34,7 +34,7 @@ ca-certificates = "^2024.7.4"
 cachetools = "^5.3.3"
 caiman = "^1.11.1"
 cffi = "^1.16.0"
-charls = "^2.4.2"
+
 click = "^8.1.7"
 cloudpickle = "^3.0.0"
 cryptography = "^42.0.8"
