@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "king-gizzard"
+name = "wizards_staff"
 version = "0.1.0"
 description = "Calcium imaging analysis pipeline for extracting metrics from Lizard-Wizard outputs, developed for the Arc Institute"
 authors = ["mrjholt <mr.jesseholt@gmail.com>"]
