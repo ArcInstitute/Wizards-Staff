@@ -10,7 +10,7 @@ from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.utils import categorize_files
 
 
-def wizards_staff_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./lizard_wizard_outputs'):
+def run_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./lizard_wizard_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     
