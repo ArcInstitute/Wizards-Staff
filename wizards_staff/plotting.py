@@ -12,7 +12,7 @@ import numpy as np
 
 def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, 
                         size_threshold=20000, show_plots=True, save_files=False,
-                        clustering = False, dff_data = None, output_dir='./lizard_wizard_outputs'):
+                        clustering = False, dff_data = None, output_dir='./wizard_staff_outputs'):
     """
     Plots the activity of neurons by overlaying the spatial footprints on a single image.
     
@@ -139,7 +139,7 @@ def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
     
     return overlay_image
 
-def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./lizard_wizard_outputs', 
+def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', 
                         min_clusters=2, max_clusters=10, random_seed=1111111, show_plots=True, save_files = True):
     """
     Plots K-means clustering of the given data and outputs synchronization metrics and clustering information to a spreadsheet.
@@ -259,7 +259,7 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./liz
     return best_silhouette_score, best_num_clusters
 
 def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
-                            norm=False, show_plots=True, save_files = True, output_dir='./lizard_wizard_outputs'):
+                            norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
     """
     Plots the average activity of each cluster and the average activity of a specified cluster with std.
 
@@ -525,3 +525,62 @@ def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescal
         montage[y * img_height:(y + 1) * img_height, x * img_width:(x + 1) * img_width] = overlay_img
 
     return montage
+
+def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False):
+    """
+    Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
+
+    Args:
+        d_mn_pwc (dict): Dictionary containing mean pairwise correlation data.
+        title (str): Title of the plot.
+        fname (str): Filename for saving the results (without extension).
+        output_dir (str): Directory where output files will be saved.
+        xlabel (str): Label for the x-axis. Default is 'Groups'.
+        ylabel (str): Label for the y-axis. Default is 'Mean Pairwise Correlation'.
+        lwp (float): Line width for the plot. Default is 1.
+        psz (float): Point size for the plot. Default is 5.
+        pdeg (int): Degree of the polynomial fit, if applied. Default is 4.
+        show_plots (bool): Flag to control whether plots are displayed. Default is True.
+        save_files (bool): Flag to control whether plots are saved to files. Default is False.
+    """
+    # Generate and sort means and standard deviations
+    d, d_std = gen_mn_std_means(d_mn_pwc)
+    d = dict(sorted(d.items()))
+    d_std = dict(sorted(d_std.items()))
+
+    # Convert dictionary keys and values to lists
+    keys = list(d.keys())
+    values = list(d.values())
+    errors = list(d_std.values())
+
+    # Create blank figure
+    fig = plt.figure(figsize=(2, 2))
+    ax = fig.add_axes([0., 0., 1., 1.])
+    ax.margins(0.008)
+    ax.errorbar(keys, values, yerr=errors, fmt='o', color='gray', 
+                label='Cell Pairs', linewidth=lwp, markersize=psz)
+
+    # Polynomial fit can be added if needed
+    if poly:
+        x, y = gen_polynomial_fit(d, degree=pdeg)
+        ax.plot(x, y, color='gray', linewidth=lwp)
+    
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    
+    if save_files==True:
+        # Expand the user directory if it exists in the output_dir path
+        output_dir = os.path.expanduser(output_dir)
+
+        # Create the output directory if it does not exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save the figure
+        plt.savefig(f'{output_dir}{fname}_{title}.png', bbox_inches='tight')
+        
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()

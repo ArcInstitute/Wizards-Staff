@@ -5,12 +5,11 @@ from scipy.stats import zscore
 from tqdm import tqdm
 from wizards_staff.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
 from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, spatial_filter_and_plot, plot_activity_map
-from wizards_staff.pwc import lizard_wizard_pwc
+from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.utils import categorize_files
 
-
-def run_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./lizard_wizard_outputs'):
+def run_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     

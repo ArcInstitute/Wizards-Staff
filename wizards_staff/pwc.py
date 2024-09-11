@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from wizards_staff.plotting import spatial_filter_and_plot
+from wizards_staff.plotting import spatial_filter_and_plot, plot_pwc_means
 from wizards_staff.metadata import load_and_process_metadata
 from wizards_staff.utils import categorize_files
 
@@ -225,7 +225,6 @@ def load_and_filter_files(categorized_files, p_th=75, size_threshold=20000):
         d_nspIDs[raw_filename] = filtered_idx
     return d_dff, d_nspIDs
 
-# Function to filter group keys
 def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs):
     """
     Filters group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
@@ -244,67 +243,7 @@ def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs):
         filtered_d_k_in_groups[group_id] = filtered_keys_in_group
     return filtered_d_k_in_groups
 
-def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False):
-    """
-    Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
-
-    Args:
-        d_mn_pwc (dict): Dictionary containing mean pairwise correlation data.
-        title (str): Title of the plot.
-        fname (str): Filename for saving the results (without extension).
-        output_dir (str): Directory where output files will be saved.
-        xlabel (str): Label for the x-axis. Default is 'Groups'.
-        ylabel (str): Label for the y-axis. Default is 'Mean Pairwise Correlation'.
-        lwp (float): Line width for the plot. Default is 1.
-        psz (float): Point size for the plot. Default is 5.
-        pdeg (int): Degree of the polynomial fit, if applied. Default is 4.
-        show_plots (bool): Flag to control whether plots are displayed. Default is True.
-        save_files (bool): Flag to control whether plots are saved to files. Default is False.
-    """
-    # Generate and sort means and standard deviations
-    d, d_std = gen_mn_std_means(d_mn_pwc)
-    d = dict(sorted(d.items()))
-    d_std = dict(sorted(d_std.items()))
-
-    # Convert dictionary keys and values to lists
-    keys = list(d.keys())
-    values = list(d.values())
-    errors = list(d_std.values())
-
-    # Create blank figure
-    fig = plt.figure(figsize=(2, 2))
-    ax = fig.add_axes([0., 0., 1., 1.])
-    ax.margins(0.008)
-    ax.errorbar(keys, values, yerr=errors, fmt='o', color='gray', 
-                label='Cell Pairs', linewidth=lwp, markersize=psz)
-
-    # Polynomial fit can be added if needed
-    if poly:
-        x, y = gen_polynomial_fit(d, degree=pdeg)
-        ax.plot(x, y, color='gray', linewidth=lwp)
-    
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.legend()
-    
-    if save_files==True:
-        # Expand the user directory if it exists in the output_dir path
-        output_dir = os.path.expanduser(output_dir)
-
-        # Create the output directory if it does not exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save the figure
-        plt.savefig(f'{output_dir}{fname}_{title}.png', bbox_inches='tight')
-        
-    if show_plots:
-        plt.show()
-    else:
-        plt.close()
-
-
-def lizard_wizard_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2, show_plots=False, save_files = False, output_dir = './lizard_wizard_outputs'):
+def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2, show_plots=False, save_files = False, output_dir = './wizard_staff_outputs'):
     """
     Processes data, computes metrics, generates plots, and stores them in DataFrames.
 
@@ -319,7 +258,7 @@ def lizard_wizard_pwc(group_name, metadata_path, results_folder, poly = False, p
         psz (float): Point size for plots. Default is 2.
         show_plots (bool): Flag to control whether plots are displayed. Default is False.
         save_files (bool): Flag to control whether plots and dataframes are saved to files. Default is False.
-        output_dir (str): Directory where output files will be saved. Default is './lizard_wizard_outputs'.
+        output_dir (str): Directory where output files will be saved. Default is './wizard_staff_outputs'.
     
     Returns:
         df_mn_pwc (pd.DataFrame): DataFrame containing overall pairwise correlation metrics.

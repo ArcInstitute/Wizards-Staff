@@ -3,7 +3,6 @@ from skimage.io import imread
 from skimage.measure import label, regionprops
 from caiman.source_extraction.cnmf import deconvolution
 
-
 def convert_f_to_cs(fluorescence_data, p=2, noise_range=[0.25, 0.5]):
     """
     Converts fluorescence data to calcium and spike signals using deconvolution.
