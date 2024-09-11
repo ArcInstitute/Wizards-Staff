@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import os
 from wizards_staff.plotting import spatial_filter_and_plot
 from wizards_staff.metadata import load_and_process_metadata
-from wizards_staff.king_gizzard import categorize_files
+from wizards_staff.utils import categorize_files
 
 def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
     """
