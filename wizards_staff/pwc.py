@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-from wizards_staff.plotting import spatial_filter_and_plot, plot_pwc_means
+# from wizards_staff.plotting import plot_pwc_means
 from wizards_staff.metadata import load_and_process_metadata
-from wizards_staff.utils import categorize_files
+from wizards_staff.utils import categorize_files, load_and_filter_files, spatial_filtering
 
 def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
     """
@@ -197,33 +197,7 @@ def gen_polynomial_fit(data_dict, degree=4):
 
     return x_values, y_predicted
 
-def load_and_filter_files(categorized_files, p_th=75, size_threshold=20000):
-    """
-    Loads dF/F0 output data and filter cell IDs based on spatial filtering criteria.
 
-    Args:
-        categorized_files (dict): Dictionary mapping filenames to their corresponding file paths.
-        p_th (float): Percentile threshold for image processing. Default is 75.
-        size_threshold (int): Size threshold for filtering out noise events. Default is 20000.
-
-    Returns:
-        d_dff (dict): Dictionary where each key is a filename and the value is the loaded dF/F data matrix.
-        d_nspIDs (dict): Dictionary where each key is a filename and the value is the list of filtered neuron IDs.
-    """
-    d_dff = {}
-    d_nspIDs = {}
-    for raw_filename, file_paths in categorized_files.items():
-        dff_dat = np.load(file_paths[8], allow_pickle=True)
-        d_dff[raw_filename] = dff_dat
-        cn_filter_img = file_paths[1]
-        cnm_A = np.load(file_paths[2], allow_pickle=True)
-        cnm_idx = np.load(file_paths[5], allow_pickle=True)
-        filtered_idx = spatial_filter_and_plot(
-            cn_filter=cn_filter_img, p_th=p_th, size_threshold=size_threshold, 
-            cnm_A=cnm_A, cnm_idx=cnm_idx, im_min=None, plot=False, silence=True
-        )
-        d_nspIDs[raw_filename] = filtered_idx
-    return d_dff, d_nspIDs
 
 def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs):
     """
@@ -324,3 +298,62 @@ def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, l
         print(f'DataFrames saved to {output_dir}')
 
     return df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
+
+def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False):
+    """
+    Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
+
+    Args:
+        d_mn_pwc (dict): Dictionary containing mean pairwise correlation data.
+        title (str): Title of the plot.
+        fname (str): Filename for saving the results (without extension).
+        output_dir (str): Directory where output files will be saved.
+        xlabel (str): Label for the x-axis. Default is 'Groups'.
+        ylabel (str): Label for the y-axis. Default is 'Mean Pairwise Correlation'.
+        lwp (float): Line width for the plot. Default is 1.
+        psz (float): Point size for the plot. Default is 5.
+        pdeg (int): Degree of the polynomial fit, if applied. Default is 4.
+        show_plots (bool): Flag to control whether plots are displayed. Default is True.
+        save_files (bool): Flag to control whether plots are saved to files. Default is False.
+    """
+    # Generate and sort means and standard deviations
+    d, d_std = gen_mn_std_means(d_mn_pwc)
+    d = dict(sorted(d.items()))
+    d_std = dict(sorted(d_std.items()))
+
+    # Convert dictionary keys and values to lists
+    keys = list(d.keys())
+    values = list(d.values())
+    errors = list(d_std.values())
+
+    # Create blank figure
+    fig = plt.figure(figsize=(2, 2))
+    ax = fig.add_axes([0., 0., 1., 1.])
+    ax.margins(0.008)
+    ax.errorbar(keys, values, yerr=errors, fmt='o', color='gray', 
+                label='Cell Pairs', linewidth=lwp, markersize=psz)
+
+    # Polynomial fit can be added if needed
+    if poly:
+        x, y = gen_polynomial_fit(d, degree=pdeg)
+        ax.plot(x, y, color='gray', linewidth=lwp)
+    
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    
+    if save_files==True:
+        # Expand the user directory if it exists in the output_dir path
+        output_dir = os.path.expanduser(output_dir)
+
+        # Create the output directory if it does not exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save the figure
+        plt.savefig(f'{output_dir}{fname}_{title}.png', bbox_inches='tight')
+        
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()

@@ -4,12 +4,12 @@ import pandas as pd
 from scipy.stats import zscore
 from tqdm.notebook import tqdm
 from wizards_staff.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
-from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, spatial_filter_and_plot, plot_spatial_activity_map
+from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, plot_spatial_activity_map
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
-from wizards_staff.utils import categorize_files
+from wizards_staff.utils import categorize_files, load_required_files, spatial_filtering
 
-def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
+def run_all(results_folder, metadata_path, p_th = 75, min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     
@@ -17,6 +17,7 @@ def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, rand
         results_folder (str): Path to the results folder.
         size_threshold (int): Size threshold for filtering out noise events.    
         metadata_path (str): Path to the metadata CSV file.
+        p_th (float): Percentile threshold for image processing. Default is 75.
         min_clusters (int): The minimum number of clusters to try. Default is 2.
         max_clusters (int): The maximum number of clusters to try. Default is 10.
         random_seed (int): The seed for random number generation in K-means. Default is 1111111.
@@ -54,27 +55,17 @@ def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, rand
     mask_metrics_data = []
     silhouette_scores_data = []
 
-    for raw_filename, file_paths in tqdm(categorized_files.items(), desc="Processing files"):
+    for raw_filename, _ in tqdm(categorized_files.items(), desc="Processing files"):
         try:
-            # Load the necessary files
-            cn_filter = np.load(categorized_files[raw_filename][0], allow_pickle=True)
-            cn_filter_img = categorized_files[raw_filename][1]
-            cnm_A = np.load(categorized_files[raw_filename][2], allow_pickle=True)
-            cnm_C = np.load(categorized_files[raw_filename][3], allow_pickle=True)
-            cnm_S = np.load(categorized_files[raw_filename][4], allow_pickle=True)
-            cnm_idx = np.load(categorized_files[raw_filename][5], allow_pickle=True)
-            dff_dat = np.load(categorized_files[raw_filename][8], allow_pickle=True)
-            dat = np.load(categorized_files[raw_filename][8], allow_pickle=True)
-
-            # im_min = categorized_files[raw_filename][13]
-            im_min = categorized_files[raw_filename][12] # this is the PNR filter image, use only for testing
-
-            p_th = 75  # Threshold percentile for image processing
+            file_data = load_required_files(categorized_files, raw_filename)
             
             # Apply spatial filtering and plot the results
-            filtered_idx = spatial_filter_and_plot(cn_filter_img, p_th, size_threshold, 
-                cnm_A, cnm_idx, im_min, plot = False, silence = True)
-
+            filtered_idx = spatial_filtering(
+                cn_filter= file_data['cn_filter_img'], p_th = p_th, size_threshold=size_threshold, 
+                cnm_A=file_data['cnm_A'], cnm_idx=file_data['cnm_idx'], im_min = file_data['im_min'], plot=False, silence=True
+            )
+            
+            dff_dat = file_data['dff_dat']
             dff = np.copy(dff_dat)  # Copy the ΔF/F₀ data
             dff += 0.0001  # Small constant added to avoid division by zero
 
@@ -163,11 +154,11 @@ def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, rand
                 min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed, norm=False, show_plots = show_plots, 
                 save_files = save_files, output_dir= output_dir)
 
-            base_act_img = plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, 
+            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'], file_data['cnm_idx'], raw_filename, 
                                                      min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
                                                      show_plots = show_plots, save_files = save_files)
             
-            clust_act_img = plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename,
+            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'], file_data['cnm_idx'], raw_filename,
                                                        min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
                                                       clustering = True, dff_data = dff_dat, show_plots = show_plots, save_files = save_files)
 
