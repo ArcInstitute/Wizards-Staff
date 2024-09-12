@@ -9,6 +9,7 @@ import warnings
 import pandas as pd
 import os
 import numpy as np
+from wizards_staff.pwc import gen_mn_std_means, gen_polynomial_fit
 
 def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min_clusters=2, max_clusters=10, random_seed = 1111111,
                         size_threshold=20000, show_plots=True, save_files=False,

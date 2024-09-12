@@ -218,9 +218,8 @@ def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, rand
 
         print(f'Data saved to {output_dir}')
     
-    
     if group_name:
-        df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra = lizard_wizard_pwc(
+        df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra = run_pwc(
                             group_name, metadata_path, results_folder, poly = poly, show_plots = show_plots, save_files = save_files, output_dir = output_dir)
         return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
 
