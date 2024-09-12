@@ -10,7 +10,7 @@ import pandas as pd
 import os
 import numpy as np
 
-def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, 
+def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min_clusters=2, max_clusters=10, random_seed = 1111111,
                         size_threshold=20000, show_plots=True, save_files=False,
                         clustering = False, dff_data = None, output_dir='./wizard_staff_outputs'):
     """
@@ -22,6 +22,9 @@ def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
     cnm_idx (ndarray): Indices of accepted components.
     raw_filename (str): The raw filename of the image.
     p_th (float): Percentile threshold for image processing.
+    min_clusters (int): The minimum number of clusters to try. Default is 2.
+    max_clusters (int): The maximum number of clusters to try. Default is 10.
+    random_seed (int): The seed for random number generation in K-means. Default is 1111111.
     size_threshold (int): Size threshold for filtering out noise events.
     show_plots (bool): If True, shows the plots. Default is True.
     save_files (bool): If True, saves the overlay image to the output directory. Default is True.
@@ -62,12 +65,12 @@ def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         best_labels = None
 
         # Try K-means with different numbers of clusters
-        for num_clusters in range(2, 11):  # Similar to min_clusters=2, max_clusters=10
+        for num_clusters in range(min_clusters, max_clusters + 1):
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning, module="scipy.cluster.vq")
+                warnings.filterwarnings("ignore", category=UserWarning)
 
                 # Perform K-means clustering
-                centroids, labels = kmeans2(data_t, num_clusters, seed=1111111)
+                centroids, labels = kmeans2(data_t, num_clusters, seed = random_seed)
             
             # Calculate silhouette score
             silhouette_avg = silhouette_score(data_t, labels)
@@ -123,18 +126,26 @@ def plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
     if save_files:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
+        output_dir_pngs = os.path.join(output_dir, 'cluster_activity_maps')
         
         # Create the output directory if it does not exist
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir_pngs, exist_ok=True)
         
         # Define the file path
         if clustering and dff_data is not None:
-            overlay_image_path = os.path.join(output_dir, f'{raw_filename}_clustered_activity_overlay.png')
+            overlay_image_path = os.path.join(output_dir_pngs, f'{raw_filename}_clustered_activity_overlay.png')
         else:
-            overlay_image_path = os.path.join(output_dir, f'{raw_filename}_activity_overlay.png')
+            overlay_image_path = os.path.join(output_dir_pngs, f'{raw_filename}_activity_overlay.png')
         
+        # Create a new figure for saving
+        plt.figure(figsize=(10, 10))
+        plt.imshow(im_min, cmap='gray')  # Plot the min projection image in grayscale
+        plt.imshow(overlay_image, alpha=0.6)  # Overlay the spatial activity map with transparency
+        plt.axis('off')  # Turn off axis labels
+
         # Save the overlay image
-        plt.imsave(overlay_image_path, overlay_image)
+        plt.savefig(overlay_image_path, bbox_inches='tight', pad_inches=0)
+        plt.close()
         print(f'Overlay image saved to {overlay_image_path}')
     
     return overlay_image
@@ -165,7 +176,7 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wiz
     for num_clusters in range(min_clusters, max_clusters + 1):
             # Suppress warnings of empty clusters from k-means clustering
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, module="scipy.cluster.vq")
+            warnings.filterwarnings("ignore", category=UserWarning)
 
             # Perform K-means clustering
             centroids, labels = kmeans2(data_t, num_clusters, seed=random_seed)
@@ -286,7 +297,7 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
     for num_clusters in range(min_clusters, max_clusters + 1):
             # Suppress warnings of empty clusters from k-means clustering
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, module="scipy.cluster.vq")
+            warnings.filterwarnings("ignore", category=UserWarning)
 
             # Perform K-means clustering
             centroids, labels = kmeans2(data_t, num_clusters, seed=random_seed)

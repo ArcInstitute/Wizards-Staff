@@ -2,14 +2,14 @@ import os
 import numpy as np
 import pandas as pd
 from scipy.stats import zscore
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from wizards_staff.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
-from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, spatial_filter_and_plot, plot_activity_map
+from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, spatial_filter_and_plot, plot_spatial_activity_map
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.utils import categorize_files
 
-def run_all(results_folder, metadata_path, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
+def run_all(results_folder, metadata_path, min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     
@@ -17,6 +17,9 @@ def run_all(results_folder, metadata_path, group_name = None, poly = False, size
         results_folder (str): Path to the results folder.
         size_threshold (int): Size threshold for filtering out noise events.    
         metadata_path (str): Path to the metadata CSV file.
+        min_clusters (int): The minimum number of clusters to try. Default is 2.
+        max_clusters (int): The maximum number of clusters to try. Default is 10.
+        random_seed (int): The seed for random number generation in K-means. Default is 1111111.
         group_name (str): Name of the group to which the data belongs. Used for PWC analysis.
         poly (bool): Flag to control whether to perform polynomial fitting during PWC analysis. Default is False.
         show_plots (bool): Flag to control whether plots are displayed. Default is True.
@@ -145,7 +148,8 @@ def run_all(results_folder, metadata_path, group_name = None, poly = False, size
             # Perform K-means clustering and plot
             silhouette_score, num_clusters = plot_kmeans_heatmap(
                 dff_data = dff_dat, filtered_idx = filtered_idx, raw_filename = raw_filename, 
-                min_clusters = 2, max_clusters = 10, show_plots = show_plots, save_files = save_files, output_dir= output_dir)
+                min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed, 
+                show_plots = show_plots, save_files = save_files, output_dir= output_dir)
 
             # Append silhouette score to the list
             silhouette_scores_data.append({
@@ -156,11 +160,16 @@ def run_all(results_folder, metadata_path, group_name = None, poly = False, size
 
             # Plot cluster activity
             plot_cluster_activity(dff_data = dff_dat, filtered_idx = filtered_idx, raw_filename = raw_filename, 
-                min_clusters=2, max_clusters=10, random_seed=1111111, norm=False, show_plots = show_plots, 
+                min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed, norm=False, show_plots = show_plots, 
                 save_files = save_files, output_dir= output_dir)
 
-            base_act_img = plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, show_plots = show_plots, save_files = save_files)
-            clust_act_img = plot_activity_map(im_min, cnm_A, cnm_idx, raw_filename, clustering = True, dff_data = dff_dat, show_plots = show_plots, save_files = save_files)
+            base_act_img = plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, 
+                                                     min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
+                                                     show_plots = show_plots, save_files = save_files)
+            
+            clust_act_img = plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename,
+                                                       min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
+                                                      clustering = True, dff_data = dff_dat, show_plots = show_plots, save_files = save_files)
 
         except Exception as e:
             print(f"Error processing file {raw_filename}: {e}")
