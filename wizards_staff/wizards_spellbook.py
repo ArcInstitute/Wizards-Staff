@@ -25,7 +25,7 @@ def convert_f_to_cs(fluorescence_data, p=2, noise_range=[0.25, 0.5]):
         fluorescence_trace = np.copy(fluorescence_data[i, :])
         
         # Perform deconvolution to extract calcium and spike signals
-        calcium, baseline, c1, g, sn, spikes, lam = deconvolution.constrained_foopsi(
+        calcium, _, _, _, _, spikes, _ = deconvolution.constrained_foopsi(
             fluorescence_trace, bl=None, c1=None, g=None, sn=None, p=p,
             method_deconvolution='oasis', bas_nonneg=True, noise_range=noise_range,
             noise_method='logmexp', lags=5, fudge_factor=1.0, verbosity=True,

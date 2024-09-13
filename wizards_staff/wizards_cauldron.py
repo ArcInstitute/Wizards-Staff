@@ -146,7 +146,7 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
                 })
 
             # Create ΔF/F₀ graph
-            plot_dff_activity(dff_dat, filtered_idx, frate, raw_filename, sz_per_neuron = 0.6, 
+            plot_dff_activity(dff_dat, filtered_idx, frate, raw_filename, sz_per_neuron = 0.5, 
                     show_plots=show_plots, save_files = save_files, output_dir = output_dir)
 
             # Perform K-means clustering and plot
