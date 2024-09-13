@@ -1,7 +1,7 @@
 # wizards_staff/__init__.py
 
 # From king_gizzard.py
-from .king_gizzard import run_all
+from .wizards_cauldron import run_all
 
 # From pwc.py
 from .pwc import run_pwc, calc_pwc_mn, extract_intra_inter_nsp_neurons, gen_mn_std_means, gen_polynomial_fit
