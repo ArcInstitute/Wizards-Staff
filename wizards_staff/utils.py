@@ -37,10 +37,10 @@ def categorize_files(results_folder):
         ('df_f0_graph', '.tif'),
         ('dff_f_mean', '.npy'),
         ('f_mean', '.npy'),
-        ('mask', '.tif'),
         ('pnr_filter', '.npy'),
         ('pnr_filter', '.tif'),
-        ('minprojection', '.tif')
+        ('minprojection', '.tif'),
+        ('mask', '.tif'),
     ]
 
     # Filter files and populate the dictionary
@@ -110,9 +110,13 @@ def load_required_files(categorized_files, raw_filename):
             'cnm_C': np.load(categorized_files[raw_filename][3], allow_pickle=True),
             'cnm_S': np.load(categorized_files[raw_filename][4], allow_pickle=True),
             'cnm_idx': np.load(categorized_files[raw_filename][5], allow_pickle=True),
+            'pnr_hist': imread(categorized_files[raw_filename][6]),
+            'df_f0_graph': imread(categorized_files[raw_filename][7]),
             'dff_dat': np.load(categorized_files[raw_filename][8], allow_pickle=True),
             'dat': np.load(categorized_files[raw_filename][9], allow_pickle=True),
-            'im_min': categorized_files[raw_filename][12] if 13 not in categorized_files[raw_filename] else categorized_files[raw_filename][13]
+            'pnr_filter': np.load(categorized_files[raw_filename][10], allow_pickle=True),
+            'im_min': categorized_files[raw_filename][11] if 12 not in categorized_files[raw_filename] else categorized_files[raw_filename][12],
+            'mask': imread(categorized_files[raw_filename][13]) if 13 in categorized_files[raw_filename] else None
         }
     except Exception as e:
         print(f"Error loading files for {raw_filename}: {e}")
