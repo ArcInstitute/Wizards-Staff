@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-# from wizards_staff.plotting import plot_pwc_means
 from wizards_staff.metadata import load_and_process_metadata
 from wizards_staff.utils import categorize_files, load_and_filter_files, spatial_filtering
 

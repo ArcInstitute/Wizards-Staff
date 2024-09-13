@@ -154,13 +154,15 @@ def run_all(results_folder, metadata_path, p_th = 75, min_clusters=2, max_cluste
                 min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed, norm=False, show_plots = show_plots, 
                 save_files = save_files, output_dir= output_dir)
 
-            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'], file_data['cnm_idx'], raw_filename, 
-                                                     min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
-                                                     show_plots = show_plots, save_files = save_files)
+            # Plot spatial activity map
+            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'], filtered_idx, raw_filename, 
+                min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
+                show_plots = show_plots, save_files = save_files)
             
-            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'], file_data['cnm_idx'], raw_filename,
-                                                       min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
-                                                      clustering = True, dff_data = dff_dat, show_plots = show_plots, save_files = save_files)
+            # Plot spatial activity map with clustering
+            plot_spatial_activity_map(file_data['im_min'], file_data['cnm_A'],filtered_idx, raw_filename,
+                min_clusters = min_clusters, max_clusters = max_clusters, random_seed= random_seed,
+                clustering = True, dff_data = dff_dat, show_plots = show_plots, save_files = save_files)
 
         except Exception as e:
             print(f"Error processing file {raw_filename}: {e}")

@@ -9,10 +9,11 @@ import warnings
 import pandas as pd
 import os
 import numpy as np
-# from wizards_staff.pwc import gen_mn_std_means, gen_polynomial_fit
+import random
 
-def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min_clusters=2, max_clusters=10, random_seed = 1111111,
-                        size_threshold=20000, show_plots=True, save_files=False,
+def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, 
+                        min_clusters=2, max_clusters=10, random_seed = 1111111,
+                        show_plots=True, save_files=False,
                         clustering = False, dff_data = None, output_dir='./wizard_staff_outputs'):
     """
     Plots the activity of neurons by overlaying the spatial footprints on a single image.
@@ -26,7 +27,6 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min
     min_clusters (int): The minimum number of clusters to try. Default is 2.
     max_clusters (int): The maximum number of clusters to try. Default is 10.
     random_seed (int): The seed for random number generation in K-means. Default is 1111111.
-    size_threshold (int): Size threshold for filtering out noise events.
     show_plots (bool): If True, shows the plots. Default is True.
     save_files (bool): If True, saves the overlay image to the output directory. Default is True.
     clustering (bool): If True, perform K-means clustering and color ROIs by cluster.
@@ -48,18 +48,9 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min
     cmap = plt.get_cmap('nipy_spectral')
     norm = colors.Normalize(vmin=0, vmax=len(cnm_idx))
 
-    # Compute the size of each neuron's footprint
-    footprint_sizes = np.sum(cnm_A > 0, axis=0)
-
-    # Find indices of neurons with footprints larger than the threshold
-    large_footprint_indices = np.where(footprint_sizes > size_threshold)[0]
-
-    # Filter out these indices from the idx array
-    filtered_idx = [i for i in cnm_idx if i not in large_footprint_indices]
-
     if clustering and dff_data is not None:
         # Perform clustering on the filtered data
-        data_t = dff_data[filtered_idx]
+        data_t = dff_data[cnm_idx]
 
         best_silhouette_score = -1
         best_num_clusters = 2
@@ -81,14 +72,22 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min
                 best_silhouette_score = silhouette_avg
                 best_num_clusters = num_clusters
                 best_labels = labels
+        print(f"Best number of clusters: {best_num_clusters}")
+        print(f"Best silhouette score: {best_silhouette_score}")
         
         # Assign colors to clusters
-        norm = colors.Normalize(vmin=0, vmax=best_num_clusters)
-        cluster_colors = [cmap(norm(cluster))[:3] for cluster in best_labels]
-        cluster_colors = np.array(cluster_colors) * 255  # Convert to 0-255 range
+        unique_clusters = np.unique(best_labels)
+        cluster_colors = {}
+        for cluster in unique_clusters:
+            color_idx = random.uniform(0.0, 1.0)  # Random float between 0 and 1
+            color = np.array(cmap(color_idx)[:3]) * 255  # Select a random color from the full colormap
+            cluster_colors[cluster] = color
+
+        print(f"Best labels: {best_labels}")
+        print(f"Cluster colors: {cluster_colors}")
 
     # Apply spatial filtering and generate the overlay image
-    for i, idx in enumerate(filtered_idx):
+    for i, idx in enumerate(cnm_idx):
         Ai = np.copy(cnm_A[:, idx])
         Ai = Ai[Ai > 0]
         thr = np.percentile(Ai, p_th)
@@ -99,7 +98,8 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, min
 
         # Determine the color based on clustering or use the default colormap
         if clustering and dff_data is not None:
-            color = cluster_colors[i]
+            cluster = best_labels[i]
+            color = cluster_colors[cluster]
         else:
             color = cmap(norm(i))[:3]  # RGB values from the colormap
             color = np.array(color) * 255  # Convert to 0-255 range
