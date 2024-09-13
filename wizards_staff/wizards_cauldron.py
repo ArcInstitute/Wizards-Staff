@@ -3,26 +3,29 @@ import numpy as np
 import pandas as pd
 from scipy.stats import zscore
 from tqdm.notebook import tqdm
-from wizards_staff.metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
+from wizards_staff.wizards_spellbook import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
 from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, plot_spatial_activity_map
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.utils import categorize_files, load_required_files, spatial_filtering
 
-def run_all(results_folder, metadata_path, p_th = 75, min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
+def run_all(results_folder, metadata_path, fps, p_th = 75, min_clusters=2, max_clusters=10, 
+            random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, 
+            show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
     """
     Processes the results folder, computes metrics, and stores them in DataFrames.
     
     Args:
         results_folder (str): Path to the results folder.
-        size_threshold (int): Size threshold for filtering out noise events.    
         metadata_path (str): Path to the metadata CSV file.
+        fps (int): Frames per second of the imaging session.
         p_th (float): Percentile threshold for image processing. Default is 75.
         min_clusters (int): The minimum number of clusters to try. Default is 2.
         max_clusters (int): The maximum number of clusters to try. Default is 10.
         random_seed (int): The seed for random number generation in K-means. Default is 1111111.
-        group_name (str): Name of the group to which the data belongs. Used for PWC analysis.
+        group_name (str): Name of the group to which the data belongs. Required for PWC analysis.
         poly (bool): Flag to control whether to perform polynomial fitting during PWC analysis. Default is False.
+        size_threshold (int): Size threshold for filtering out noise events.    
         show_plots (bool): Flag to control whether plots are displayed. Default is True.
         save_files (bool): Flag to control whether files are saved. Default is True.
         output_dir (str): Directory where output files will be saved.
@@ -87,7 +90,7 @@ def run_all(results_folder, metadata_path, p_th = 75, min_clusters=2, max_cluste
                                                                                         zscore_threshold = 3, percentage_threshold = 0.2)
 
             # Calculate FRPM:
-            frpm_avg, frpm  = calc_frpm(zscored_spike_events, filtered_idx, zscore_threshold = 5)
+            frpm_avg, frpm  = calc_frpm(zscored_spike_events, filtered_idx, fps, zscore_threshold = 5)
 
             # Store the results in the respective lists
             for neuron_idx, rise_times in rise_tm.items():

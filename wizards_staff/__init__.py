@@ -10,7 +10,7 @@ from .pwc import run_pwc, calc_pwc_mn, extract_intra_inter_nsp_neurons, gen_mn_s
 from .metadata import load_and_process_metadata, append_metadata_to_dfs
 
 # From metrics.py
-from .metrics import calc_rise_tm, calc_fwhm_spikes, calc_frpm, convert_f_to_cs, calc_mask_shape_metrics
+from .wizards_spellbook import calc_rise_tm, calc_fwhm_spikes, calc_frpm, convert_f_to_cs, calc_mask_shape_metrics
 
 # From plotting.py
 from .plotting import plot_spatial_activity_map, plot_kmeans_heatmap, plot_cluster_activity, overlay_images, plot_montage

@@ -169,13 +169,14 @@ def calc_fwhm_spikes(calcium_signals, spike_zscores, zscore_threshold=3, percent
     
     return fwhm_backward_positions, fwhm_forward_positions, fwhm_values, spike_counts
 
-def calc_frpm(zscored_spike_events, neuron_ids, zscore_threshold=5):
+def calc_frpm(zscored_spike_events, neuron_ids, fps, zscore_threshold=5):
     """
     Calculates the firing rate per minute (FRPM) for given z-scored spike event data.
     
     Parameters:
     zscored_spike_events (ndarray): Z-scored spike events with neurons as rows and time points as columns.
     neuron_ids (ndarray): Array containing neuron IDs.
+    fps (int): Frames per second of the recording.
     zscore_threshold (int): Z-score threshold for detecting spikes.
     
     Returns:
@@ -193,8 +194,7 @@ def calc_frpm(zscored_spike_events, neuron_ids, zscore_threshold=5):
     spike_sums = np.sum(valid_spike_zscores, axis=1)
     
     # Normalize to get the firing rate per minute
-    # Multiply by 30 (frames per second) and 60 (seconds per minute), and divide by the number of frames
-    spike_sums_per_minute = spike_sums * 30 * 60 / valid_spike_zscores.shape[1]
+    spike_sums_per_minute = spike_sums * fps * 60 / valid_spike_zscores.shape[1]
 
     spike_dict = {}
 

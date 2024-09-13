@@ -444,3 +444,90 @@ def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescal
 
     return montage
 
+def plot_dff_activity(act_dat, act_filt_nsp_ids, max_dff_int, begin_tp, end_tp, sz_per_neuron, analysis_dir, base_fname, n_start=0, n_stop=-1, dff_bar=1, frate=30, lw=.2):
+    """
+    Plots the activity data of neurons within a specified time range.
+    
+    Parameters:
+    act_dat (ndarray): Activity data matrix with neurons as rows and time points as columns.
+    act_filt_nsp_ids (array): Array of neuron IDs corresponding to the rows of act_dat.
+    max_dff_int (float): Maximum ΔF/F intensity for scaling the plot.
+    begin_tp (int): Starting time point for the plot.
+    end_tp (int): Ending time point for the plot.
+    n_start (int): Index of the first cell to plot.
+    n_stop (int): Index of the last cell to plot.
+    dff_bar (float): Height of the ΔF/F scale bar.
+    frate (int): Frames per second of the data.
+    lw (float): Line width of the plot.
+    analysis_dir (str): Directory where the plot will be saved.
+    base_fname (str): Base filename for the plot.
+    """
+    # Ensure valid end_tp
+    end_tp = end_tp if end_tp >= 0 else act_dat.shape[1]
+    
+    # Sort the data by neuron IDs and select the time range
+    sorted_indices = np.argsort(act_filt_nsp_ids)
+    act_dat_sorted = act_dat[sorted_indices, begin_tp:end_tp]
+    act_filt_nsp_ids_sorted = act_filt_nsp_ids[sorted_indices]
+    
+    # Determine the number of neurons to plot
+    if n_stop is None or n_stop < 0:
+        n_stop = act_dat_sorted.shape[0]
+    n_neurons = min(n_stop, act_dat_sorted.shape[0])
+    
+    # Scale the maximum ΔF/F value
+    max_dff_int = max(max_dff_int / 2, 0.25)
+    
+    # Create a time vector
+    time_vector = np.arange(act_dat_sorted.shape[1]) / frate
+
+    # Calculate plot height
+    gr_ht = np.maximum(1, int(act_dat_sorted.shape[0] * sz_per_neuron))
+
+    # Create a figure for the plot
+    fig, ax = plt.subplots(1, 1, figsize=(7 / 2, gr_ht / 2), sharey=True)
+
+    # Plot the activity data for each neuron
+    for i in range(n_start, n_neurons):
+        color_str = f'C{i % 9}'  # Cycle through 9 colors
+        ax.plot(time_vector, act_dat_sorted[i, :] + (n_neurons - i - 1) * max_dff_int, linewidth=lw, color=color_str)
+    
+    # Draw a vertical line indicating the ΔF/F scale in black
+    ax.vlines(x=-1., ymin=0, ymax=dff_bar, lw=2, color='black')
+    ax.text(-1.5, dff_bar / 2, f'{dff_bar} ΔF/F', ha='center', va='center', rotation='vertical')
+    
+    # Label the x-axis
+    ax.set_xlabel('Time(s)')
+
+    # Hide the top, right, and left spines (borders)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    
+    # Hide the y-axis ticks and labels
+    ax.yaxis.set_ticks([])
+    ax.yaxis.set_ticklabels([])
+
+    # Adjust the margins of the plot
+    ax.margins(0.008)
+    
+       # Use tight_layout to adjust spaces between subplots
+    plt.tight_layout()
+
+    # Save the plot
+    if save_files==True:
+        # Expand the user directory if it exists in the output_dir path
+        output_dir = os.path.expanduser(output_dir)
+        output_dir_pngs = os.path.join(output_dir, 'cluster_activity_plots')
+
+        # Create the output directory if it does not exist
+        os.makedirs(output_dir_pngs, exist_ok=True)
+
+        # Save the figure
+        fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_cluster_activity_plot.png')
+        plt.savefig(fig_path, bbox_inches='tight')
+    
+    if show_plots==True:
+        plt.show()
+    else:
+        plt.close()
