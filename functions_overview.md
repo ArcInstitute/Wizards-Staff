@@ -20,7 +20,9 @@ This document provides an overview of the functions in the `wizards_staff` Pytho
 ### `run_all`
 
 ```python
-def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75, min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs')
+def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75, min_clusters=2, 
+    max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, 
+    save_files=True, output_dir='./wizard_staff_outputs')
 ```
 
 This is the main wrapper function that processes an entire results folder. The `run_all` function in this Python file processes imaging results by extracting and calculating metrics related to neuron activity, including rise time, full width at half maximum (FWHM), firing rates, and silhouette scores for K-means clustering. The function organizes the results into DataFrames, plots relevant data visualizations, and saves both the metrics and visualizations. Additionally, it performs pairwise correlation (PWC) analysis if a group name is provided, and optionally saves all outputs to specified directories.
@@ -190,7 +192,8 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
 Generates a K-means clustering heatmap and outputs clustering metrics to a file.
 
 ```python
-def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', min_clusters=2, max_clusters=10, random_seed=1111111, show_plots=True, save_files = True)
+def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', min_clusters=2,
+    max_clusters=10, random_seed=1111111, show_plots=True, save_files = True)
 ```
 
 **Arguments:**
@@ -215,7 +218,8 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wiz
 ### `plot_cluster_activity`
 
 ```python
-def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs')
+def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
+    norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs')
 ```
 
 Plots the average activity of each cluster and detailed activity of a specified cluster.
@@ -281,7 +285,8 @@ Creates a montage from a list of images, overlaying a binary image on a grayscal
 
 ```python
 def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5, max_z=0.45, 
-begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
+    begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5, show_plots=True, 
+    save_files = True, output_dir='./wizard_staff_outputs'):
 ```
 
 Plots the activity data of neurons within a specified time range.
@@ -319,7 +324,8 @@ The `pwc.py` file contains functions which calculate pairwise correlations betwe
 ### `run_pwc`
 
 ```python
-def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2, show_plots=False, save_files = False, output_dir = './wizard_staff_outputs')
+def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2,
+    show_plots=False, save_files = False, output_dir = './wizard_staff_outputs')
 ```
 
 Main wrapper function for performing the PairWise Correlation calculations. This function processes data, computes metrics, generates plots, and stores them in DataFrames.
@@ -452,7 +458,8 @@ Filters group keys to ensure that only those with valid dF/F data and neuron IDs
 ### `plot_pwc_means`
 
 ```python
-def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False)
+def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', 
+    poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False)
 ```
 
 Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
