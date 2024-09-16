@@ -193,9 +193,12 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
     fwhm_df = fwhm_df.explode(['FWHM Backward Positions', 'FWHM Forward Positions', 'FWHM Values', 'Spike Counts'])
     
     # Append metadata to dataframes
-    rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df = append_metadata_to_dfs(
-        rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, metadata_path
-    )
+    updated_dfs = append_metadata_to_dfs(metadata_path,
+                                        rise_time = rise_time_df,
+                                        frpm = frpm_df, 
+                                        fwhm = fwhm_df, 
+                                        mask_metrics = mask_metrics_df, 
+                                        sil_scores = silhouette_scores_df)
     
     # Save DataFrames as CSV files if required
     if save_files:
@@ -216,11 +219,11 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
         silhouette_scores_path = os.path.join(output_dir, f'{fname}_silhouette_scores_df.csv')
 
         # Save each DataFrame to a CSV file
-        rise_time_df.to_csv(rise_time_path, index=False)
-        fwhm_df.to_csv(fwhm_path, index=False)
-        frpm_df.to_csv(frpm_path, index=False)
-        mask_metrics_df.to_csv(mask_metrics_path, index=False)
-        silhouette_scores_df.to_csv(silhouette_scores_path, index=False)
+        updated_dfs['rise_time'].to_csv(rise_time_path, index=False)
+        updated_dfs['frpm'].to_csv(frpm_path, index=False)
+        updated_dfs['fwhm'].to_csv(fwhm_path, index=False)
+        updated_dfs['mask_metrics'].to_csv(mask_metrics_path, index=False)
+        updated_dfs['sil_scores'].to_csv(silhouette_scores_path, index=False)
 
         print(f'Data saved to {output_dir}')
     

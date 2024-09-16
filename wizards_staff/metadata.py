@@ -15,28 +15,28 @@ def load_and_process_metadata(metadata_path):
 
     return metadata_df
 
-def append_metadata_to_dfs(rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, metadata_path):
+def append_metadata_to_dfs(metadata_path, **dataframes):
     """
     Appends metadata to the given dataframes based on the filename match.
 
     Args:
-        rise_time_df (pd.DataFrame): DataFrame containing rise time metrics.
-        fwhm_df (pd.DataFrame): DataFrame containing FWHM metrics.
-        frpm_df (pd.DataFrame): DataFrame containing FRPM metrics.
-        mask_metrics_df (pd.DataFrame): DataFrame containing mask metrics.
         metadata_path (str): Path to the metadata CSV file.
+        **dataframes: Dictionary of DataFrames to append metadata to. Each key should be a string describing the metric 
+                      (e.g., 'frpm', 'fwhm'), and each value should be the corresponding DataFrame.
 
     Returns:
-        tuple: DataFrames with appended metadata.
+        dict: A dictionary of DataFrames with appended metadata.
     """
     # Load the metadata CSV file
     metadata_df = load_and_process_metadata(metadata_path)
 
-    # Merge each dataframe with the metadata dataframe based on the 'file' column
-    rise_time_df = rise_time_df.merge(metadata_df, on='Filename', how='left')
-    fwhm_df = fwhm_df.merge(metadata_df, on='Filename', how='left')
-    frpm_df = frpm_df.merge(metadata_df, on='Filename', how='left')
-    mask_metrics_df = mask_metrics_df.merge(metadata_df, on='Filename', how='left')
-    silhouette_scores_df = silhouette_scores_df.merge(metadata_df, on='Filename', how='left')
+    # Dictionary to store updated DataFrames
+    updated_dfs = {}
 
-    return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df
+    # Loop through each dataframe and merge with the metadata
+    for name, df in dataframes.items():
+        if df is not None:
+            updated_dfs[name] = df.merge(metadata_df, on='Filename', how='left')
+
+    return updated_dfs
+

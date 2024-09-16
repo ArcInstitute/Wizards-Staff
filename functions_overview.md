@@ -509,23 +509,20 @@ Loads and preprocesses the metadata from a CSV file, cleaning file names by remo
 ### `append_metadata_to_dfs`
 
 ```python
-def append_metadata_to_dfs(rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, metadata_path)
+def append_metadata_to_dfs(metadata_path, **dataframes)
 ```
 
-Appends metadata from a CSV file to multiple DataFrames, matching based on the filename.
+Appends metadata to the given dataframes based on the filename match.
 
 **Arguments:**
 
-- `rise_time_df` (pd.DataFrame): DataFrame containing rise time metrics.
-- `fwhm_df` (pd.DataFrame): DataFrame containing FWHM metrics.
-- `frpm_df` (pd.DataFrame): DataFrame containing FRPM metrics.
-- `mask_metrics_df` (pd.DataFrame): DataFrame containing mask metrics.
-- `silhouette_scores_df` (pd.DataFrame): DataFrame containing silhouette scores for K-means clustering.
 - `metadata_path` (str): Path to the metadata CSV file.
+- `**dataframes`: Dictionary of DataFrames to append metadata to. Each key should be a string describing the metric 
+                      (e.g., 'frpm', 'fwhm'), and each value should be the corresponding DataFrame.
 
 **Returns:**
 
-- `tuple`: A tuple of DataFrames with appended metadata.
+- `dict`: A dictionary of DataFrames with appended metadata.
 
 ---
 

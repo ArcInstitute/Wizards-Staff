@@ -128,7 +128,7 @@ Generates plots of mean pairwise correlations with error bars and optionally sav
 `load_and_process_metadata(metadata_path)`  
 Loads and preprocesses the metadata CSV file by cleaning the filenames.
 
-`append_metadata_to_dfs(rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, metadata_path)`  
+`append_metadata_to_dfs(metadata_path, **dataframes)`  
 Appends metadata from a CSV file to multiple DataFrames based on filename matches.
 
 ---
