@@ -7,7 +7,7 @@ from wizards_staff.wizards_spellbook import calc_rise_tm, calc_fwhm_spikes, calc
 from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, plot_spatial_activity_map, plot_dff_activity
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
-from wizards_staff.utils import categorize_files, load_required_files, spatial_filtering
+from wizards_staff.wizards_familiars import categorize_files, load_required_files, spatial_filtering
 
 def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75,  
             min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False,  

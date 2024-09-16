@@ -16,7 +16,7 @@ from .wizards_spellbook import calc_rise_tm, calc_fwhm_spikes, calc_frpm, conver
 from .plotting import plot_spatial_activity_map, plot_kmeans_heatmap, plot_cluster_activity, overlay_images, plot_montage, plot_dff_activity
 
 # From utils.py
-from .utils import categorize_files, spatial_filtering, load_required_files, load_and_filter_files
+from .wizards_familiars import categorize_files, spatial_filtering, load_required_files, load_and_filter_files
 
 __all__ = [
     "run_all",

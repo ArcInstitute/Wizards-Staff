@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from wizards_staff.metadata import load_and_process_metadata
-from wizards_staff.utils import categorize_files, load_and_filter_files, spatial_filtering
+from wizards_staff.wizards_familiars import categorize_files, load_and_filter_files, spatial_filtering
 
 def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
     """
