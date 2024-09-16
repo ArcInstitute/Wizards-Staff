@@ -49,15 +49,14 @@ pip install .
 
 A more detailed breakdown of the individual functions can be found on [this page](functions_overview.md).
 
-
-### Wizards Cauldron Functions:
+### Wizards Cauldron Functions
 
 `run_all(results_folder, metadata_path, ...)`  
 Processes the results folder, computes metrics such as rise time, FWHM, FRPM, and mask metrics, and optionally performs pairwise correlation analysis.
 
 ---
 
-### Wizards Spellbook Functions:
+### Wizards Spellbook Functions
 
 `convert_f_to_cs(fluorescence_data, p=2, noise_range=[0.25, 0.5])`  
 Converts fluorescence data to calcium and spike signals using deconvolution.
@@ -76,7 +75,7 @@ Loads a binary mask image and calculates roundness, diameter, and area of the ma
 
 ---
 
-### Plotting Functions:
+### Plotting Functions
 
 `plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, ...)`  
 Plots the activity of neurons by overlaying their spatial footprints on a single image.
@@ -98,7 +97,7 @@ Plots ΔF/F₀ activity data for neurons within a specified time range.
 
 ---
 
-### Pairwise Correlation (PWC) Functions:
+### Pairwise Correlation (PWC) Functions
 
 `run_pwc(group_name, metadata_path, results_folder, ...)`  
 Performs pairwise correlation calculations for neuron groups and generates plots.
@@ -123,7 +122,7 @@ Generates plots of mean pairwise correlations with error bars and optionally sav
 
 ---
 
-### Metadata Functions:
+### Metadata Functions
 
 `load_and_process_metadata(metadata_path)`  
 Loads and preprocesses the metadata CSV file by cleaning the filenames.
@@ -133,7 +132,7 @@ Appends metadata from a CSV file to multiple DataFrames based on filename matche
 
 ---
 
-### Wizards Familiars Functions:
+### Wizards Familiars Functions
 
 `categorize_files(results_folder)`  
 Categorizes result files based on their prefixes and extensions.

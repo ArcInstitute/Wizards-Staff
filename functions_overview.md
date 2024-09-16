@@ -517,7 +517,7 @@ Appends metadata to the given dataframes based on the filename match.
 **Arguments:**
 
 - `metadata_path` (str): Path to the metadata CSV file.
-- `**dataframes`: Dictionary of DataFrames to append metadata to. Each key should be a string describing the metric 
+- `**dataframes`: Dictionary of DataFrames to append metadata to. Each key should be a string describing the metric
                       (e.g., 'frpm', 'fwhm'), and each value should be the corresponding DataFrame.
 
 **Returns:**
