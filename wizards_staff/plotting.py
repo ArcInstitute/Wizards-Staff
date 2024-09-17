@@ -1,22 +1,28 @@
+# import
+## batteries
+import os
+import warnings
+import random
+## 3rd party
+import numpy as np
+import pandas as pd
 from skimage.io import imread
 from sklearn.metrics import silhouette_score
 from scipy.cluster.vq import kmeans2
 import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
 from matplotlib import colors
-import matplotlib.pyplot as plt
-import warnings
-import pandas as pd
-import os
-import numpy as np
-import random
 
+
+# Functions
 def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, 
-                        min_clusters=2, max_clusters=10, random_seed = 1111111,
-                        show_plots=True, save_files=False,
-                        clustering = False, dff_data = None, output_dir='./wizard_staff_outputs'):
+                              min_clusters=2, max_clusters=10, random_seed = 1111111,
+                              show_plots=True, save_files=False,
+                              clustering = False, dff_data = None, 
+                              output_dir='./wizard_staff_outputs'):
     """
-    Plots the activity of neurons by overlaying the spatial footprints on a single image.
+    Plot the activity of neurons by overlaying the spatial footprints on a single image.
     
     Parameters:
     im_min (ndarray): Minimum intensity image for overlay.
@@ -146,10 +152,10 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         # print(f'Overlay image saved to {overlay_image_path}')
     
 
-def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', 
+def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wizard_staff_outputs', 
                         min_clusters=2, max_clusters=10, random_seed=1111111, show_plots=True, save_files = True):
     """
-    Plots K-means clustering of the given data and outputs synchronization metrics and clustering information to a spreadsheet.
+    Plot K-means clustering of the given data and outputs synchronization metrics and clustering information to a spreadsheet.
 
     Parameters:
     dff_data (np.ndarray): The dF/F data array.
@@ -266,9 +272,9 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wiz
     return best_silhouette_score, best_num_clusters
 
 def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
-                            norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
+                          norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
     """
-    Plots the average activity of each cluster and the average activity of a specified cluster with std.
+    Plot the average activity of each cluster and the average activity of a specified cluster with std.
 
     Parameters:
     dff_data (np.ndarray): The dF/F data array.
@@ -364,7 +370,7 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
     plt.tight_layout()
 
     # Save the plot
-    if save_files==True:
+    if save_files:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         output_dir_pngs = os.path.join(output_dir, 'cluster_activity_plots')
@@ -376,7 +382,7 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
         fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_cluster_activity_plot.png')
         plt.savefig(fig_path, bbox_inches='tight')
     
-    if show_plots==True:
+    if show_plots:
         plt.show()
     else:
         plt.close()
@@ -441,8 +447,8 @@ def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescal
     return montage
 
 def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5, max_z=0.45, 
-                    begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5,
-                    show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
+                      begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5,
+                      show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
     """
     Plots the activity data of neurons within a specified time range.
     
@@ -515,7 +521,7 @@ def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5
     plt.tight_layout()
 
     # Save the plot
-    if save_files==True:
+    if save_files:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         output_dir_pngs = os.path.join(output_dir, 'dff_activity_plots')
@@ -527,7 +533,7 @@ def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5
         fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_dff_activity_plot.png')
         plt.savefig(fig_path, bbox_inches='tight')
     
-    if show_plots==True:
+    if show_plots:
         plt.show()
     else:
         plt.close()
