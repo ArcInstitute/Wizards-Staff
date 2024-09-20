@@ -1,7 +1,8 @@
 Wizards-Staff
 =============
 
-Calcium imaging analysis pipeline for processing Lizard-Wizard outputs and performing metrics analysis, clustering, and more. This package was developed for the Arc Institute.
+Calcium imaging analysis pipeline for processing Lizard-Wizard outputs and performing metrics analysis, clustering, and more. 
+This package was developed for the Arc Institute.
 
 ## Features
 
@@ -53,8 +54,20 @@ A more detailed breakdown of the individual functions can be found on [this page
 
 ### Wizards Cauldron Functions
 
-`run_all(results_folder, metadata_path, ...)`  
+`run_all(results_folder, metadata_file, ...)`  
 Processes the results folder, computes metrics such as rise time, FWHM, FRPM, and mask metrics, and optionally performs pairwise correlation analysis.
+
+#### `results_folder`
+
+* Output folder from the Lizard-Wizard pipeline
+
+#### `metadata_file`
+
+* CSV format
+* Required columns:
+  * `Filename`: Path to the image file
+  * ...
+
 
 ---
 
@@ -149,3 +162,12 @@ Loads the necessary files for a given raw filename from the categorized files.
 Applies spatial filtering to components and generates montages of the results.
 
 ---
+
+
+# dev
+
+```bash
+wizards-staff \
+  /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d \
+  /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d/metadata.csv
+```

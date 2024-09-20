@@ -1,9 +1,12 @@
+# import
+## batteries
 import os
 import sys
 import logging
-from typing import Callable, Dict, Any, Generator, Tuple
+from typing import Callable, Dict, Any, Generator, Tuple, List
 from collections import defaultdict
 from dataclasses import dataclass, field
+## 3rd party
 import numpy as np
 import pandas as pd
 from tifffile import imread
@@ -14,40 +17,48 @@ logger = logging.getLogger(__name__)
 
 # Data item mapping (how to load each data item)
 DATA_ITEM_MAPPING = {
+    # 'cn_filter': {
+    #     'suffixes': ['cn-filter.npy'],
+    #     'loader': lambda x: np.load(x, allow_pickle=True)
+    # },
+    # 'pnr_filter': {
+    #     'suffixes': ['pnr-filter.npy'],
+    #     'loader': lambda x: np.load(x, allow_pickle=True)
+    # },
     'cnm_A': {
-        'suffixes': ['cnm-A.npy'],
+        'suffixes': ['_cnm-A.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
     'cnm_C': {
-        'suffixes': ['cnm-C.npy'],
+        'suffixes': ['_cnm-C.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
     'cnm_S': {
-        'suffixes': ['cnm-S.npy'],
+        'suffixes': ['_cnm-S.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
     'cnm_idx': {
-        'suffixes': ['cnm-idx.npy'],
+        'suffixes': ['_cnm-idx.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
     'df_f0_graph': {
-        'suffixes': ['df-f0-graph.tif'],
+        'suffixes': ['_df-f0-graph.tif'],
         'loader': lambda x: imread(x)
     },
-    'dff_f_mean': {
-        'suffixes': ['dff-f-mean.npy'],
+    'dff_dat': { 
+        'suffixes': ['_dff-dat.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
-    'f_mean': {
-        'suffixes': ['f-mean.npy'],
+    'f_dat': { 
+        'suffixes': ['_f-dat.npy'],
         'loader': lambda x: np.load(x, allow_pickle=True)
     },
     'minprojection': {    # aka: im_min
-        'suffixes': ['minprojection.tif'],
+        'suffixes': ['_minprojection.tif'],
         'loader': lambda x: imread(x)
     },
     'mask': {  
-        'suffixes': ['masks.tif'],
+        'suffixes': ['_masks.tif'],
         'loader': lambda x: imread(x)
     }
 }
@@ -61,6 +72,11 @@ class Shard:
     sample_name: str
     metadata: pd.DataFrame
     files: dict
+    rise_time_data = list
+    fwhm_data = list
+    frpm_data = list
+    mask_metrics_data = list
+    silhouette_scores_data = list
     _data_items: dict = field(default_factory=dict, init=False) 
     
     def get_data_item(self, item_name: str) -> Any:
@@ -98,20 +114,28 @@ class Shard:
         """
         yield from self.files.keys()
 
-    def items(self) ->  Generator[Tuple[str, Any], None, None]:
+    def items(self) -> Generator[Tuple[str, Any], None, None]:
         """
         Yields tuples of data item names and their loaded data.
         """
         for key in self._data_items:
             yield key, self._data_items[key]
 
-    def get(self, item_name: str) -> Any:
+    def get(self, item_name: str, req: bool=False, file_name: bool=False) -> Any:
         """
         Retrieves the data item, loading it if necessary.
         """
-        return self.get_data_item(item_name)
+        # get data item
+        if file_name:
+            data_item = self.files.get(item_name)
+        else:
+            data_item = self.get_data_item(item_name)
+        # check if required
+        if req and data_item is None:
+            raise ValueError(f"Data item '{item_name}' not found for sample '{self.sample_name}'")
+        return data_item
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Prints data_item_name : file_path for this shard.
         """
@@ -158,9 +182,10 @@ class Orb:
             if sample_name is None or sample_name not in self._samples:
                 continue
             ## suffix
-            file_suffix = file_basename[len(sample_name)+1:]
+            file_suffix = file_basename[len(sample_name):]
             ## categorize file based on suffix
             for item_name, data_info in self._data_mapping.items():
+                # file suffix matches data item suffix?
                 if any(file_suffix.endswith(suffix) for suffix in data_info['suffixes']):
                     shard = self._shards.setdefault(
                         sample_name,
@@ -202,13 +227,13 @@ class Orb:
             cols_str = ', '.join(missing_columns)
             raise ValueError(f"Missing columns in metadata file: {cols_str}")
 
-    def list_samples(self) -> list:
+    def list_samples(self) -> List[str]:
         """
         Returns a list of all sample names.
         """
         return list(self._shards.keys())
 
-    def list_data_items(self, sample: str) -> list:
+    def list_data_items(self, sample: str) -> List[str]:
         """
         Lists all data items for a given sample.
         """
@@ -243,7 +268,7 @@ class Orb:
         # merge with metadata
         return pd.merge(DF, self.metadata, on='Sample', how='left')
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Prints sample : data_item_name : file_path for all shards.
         """
@@ -254,25 +279,9 @@ class Orb:
         return '\n'.join(ret)
 
     @staticmethod
-    def _list_files(indir):
+    def _list_files(indir) -> List[str]:
         files = []
         for dirpath, dirnames, filenames in os.walk(indir):
             for filename in filenames:
                 files.append(os.path.join(dirpath, filename))
         return files
-
-    # def __getattr__(self, data_item):
-    #     if data_item in self._data_mapping:
-    #         # lazy loading
-    #         if data_item not in self._data:
-    #             self._data[data_item] = {}
-    #             # load data for each sample
-    #             for sample,file_path in self.file_paths.get(data_item, {}).items():
-    #                 if file_path is not None:
-    #                     self._data[data_item][sample] = self._load_file(file_path)
-    #                 else:
-    #                     self._data[data_item][sample] = None
-    #         return self._data[data_item]
-    #     else:
-    #         raise AttributeError(f"'WizardOrb' object has no attribute '{data_item}'")
-

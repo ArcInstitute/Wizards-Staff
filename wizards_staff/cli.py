@@ -2,7 +2,6 @@
 import os
 import sys
 import argparse
-from wizards_staff import run_all
 
 # argparse
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -38,6 +37,7 @@ def main():
     args = parse_args()
 
     # run the pipeline
+    from wizards_staff.wizards.cauldron import run_all
     rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df = run_all(
         args.results_folder, 
         args.metadata_path,

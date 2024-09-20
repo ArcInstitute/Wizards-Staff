@@ -1,29 +1,36 @@
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.linear_model import LinearRegression
-import networkx as nx
-from scipy.cluster.vq import vq, kmeans2
+# import
+## batteries
+import os
+from typing import Tuple
+## third party
 import numpy as np
 import pandas as pd
+import networkx as nx
 import matplotlib.pyplot as plt
-import os
+from scipy.cluster.vq import vq, kmeans2
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+## package
 from wizards_staff.metadata import load_and_process_metadata
-from wizards_staff.wizards_familiars import categorize_files, load_and_filter_files, spatial_filtering
+from wizards_staff.wizards.familiars import spatial_filtering #categorize_files, load_and_filter_files, 
 
-def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
+# functions
+def calc_pwc_mn(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict, dff_cut: float=0.1, 
+                norm_corr: bool=False) -> Tuple[dict, dict, dict]:
     """
     Calculates pairwise correlation means for groups
     
-    Parameters:
-    d_k_in_groups (dict): Dictionary where each key is a group identifier and the value is a list of keys.
-    d_dff (dict): Dictionary where each key corresponds to a key in d_k_in_groups and the value is a dF/F matrix.
-    d_nspIDs (dict): Dictionary where each key corresponds to a key in d_k_in_groups and the value is a neuron ID array.
-    dff_cut (float): Threshold for filtering dF/F values.
-    norm_corr (bool): Whether to normalize the correlation using Fisher's z-transformation.
+    Args:
+        d_k_in_groups: Dictionary where each key is a group identifier and the value is a list of keys.
+        d_dff: Dictionary where each key corresponds to a key in d_k_in_groups and the value is a dF/F matrix.
+        d_nspIDs: Dictionary where each key corresponds to a key in d_k_in_groups and the value is a neuron ID array.
+        dff_cut: Threshold for filtering dF/F values.
+        norm_corr: Whether to normalize the correlation using Fisher's z-transformation.
     
     Returns:
-    d_mn_pwc (dict): Dictionary of mean pairwise correlations for each group.
-    d_mn_pwc_inter (dict): Dictionary of mean inter-group correlations for each group.
-    d_mn_pwc_intra (dict): Dictionary of mean intra-group correlations for each group.
+        d_mn_pwc: Dictionary of mean pairwise correlations for each group.
+        d_mn_pwc_inter: Dictionary of mean inter-group correlations for each group.
+        d_mn_pwc_intra: Dictionary of mean intra-group correlations for each group.
     """
     # Initialize dictionaries to store results
     d_mn_pwc = {}
@@ -86,17 +93,17 @@ def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False):
     # Return the result dictionaries
     return d_mn_pwc, d_mn_pwc_inter, d_mn_pwc_intra
 
-def extract_intra_inter_nsp_neurons(conn_matrix, nsp_ids):
+def extract_intra_inter_nsp_neurons(conn_matrix: np.ndarray, nsp_ids: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Extracts intra-subpopulation and inter-subpopulation connections from a connectivity matrix.
     
-    Parameters:
-    conn_matrix (np.ndarray): A square matrix representing the connectivity between neurons.
-    nsp_ids (np.ndarray): An array containing the subpopulation IDs for each neuron.
+    Args:
+        conn_matrix: A square matrix representing the connectivity between neurons.
+        nsp_ids: An array containing the subpopulation IDs for each neuron.
     
     Returns:
-    intra_conn (np.ndarray): The upper triangular values of the connectivity matrix for intra-subpopulation connections.
-    inter_conn (np.ndarray): The upper triangular values of the connectivity matrix for inter-subpopulation connections.
+        intra_conn: The upper triangular values of the connectivity matrix for intra-subpopulation connections.
+        inter_conn: The upper triangular values of the connectivity matrix for inter-subpopulation connections.
     """
     # Make a copy of the input connectivity matrix
     conn_copy = np.copy(conn_matrix)
@@ -137,15 +144,15 @@ def extract_intra_inter_nsp_neurons(conn_matrix, nsp_ids):
     
     return intra_conn, inter_conn
 
-def gen_mn_std_means(mean_pwc_dict):
+def gen_mn_std_means(mean_pwc_dict: dict) -> Tuple[dict, dict]:
     """
     Calculates the mean and standard deviation of the means for each key in the input dictionary.
     
-    Parameters:
-    mean_pwc_dict (dict): Dictionary where each key is associated with an array of mean pairwise correlations.
+    Args:
+        mean_pwc_dict: Dictionary where each key is associated with an array of mean pairwise correlations.
     
     Returns:
-    tuple: Two dictionaries containing the mean of means and standard deviation of means for each key.
+        Two dictionaries containing the mean of means and standard deviation of means for each key.
     """
     mean_of_means_dict = {}
     std_of_means_dict = {}
@@ -160,16 +167,16 @@ def gen_mn_std_means(mean_pwc_dict):
 
     return mean_of_means_dict, std_of_means_dict
 
-def gen_polynomial_fit(data_dict, degree=4):
+def gen_polynomial_fit(data_dict: dict, degree: int=4) -> Tuple[np.ndarray, np.ndarray]:
     """
     Generates a polynomial fit for the given data.
 
-    Parameters:
-    data_dict (dict): Dictionary where keys are the independent variable (x) and values are the dependent variable (y).
-    degree (int): The degree of the polynomial fit.
+    Args:
+        data_dict: Dictionary where keys are the independent variable (x) and values are the dependent variable (y).
+        degree: The degree of the polynomial fit.
 
     Returns:
-    tuple: Arrays of x values and corresponding predicted y values from the polynomial fit.
+        tuple: Arrays of x values and corresponding predicted y values from the polynomial fit.
     """
     # Extract keys and values from the dictionary
     x_values = np.array(list(data_dict.keys()))
@@ -196,19 +203,17 @@ def gen_polynomial_fit(data_dict, degree=4):
 
     return x_values, y_predicted
 
-
-
-def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs):
+def filter_group_keys(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict) -> dict:
     """
     Filters group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
 
     Args:
-        d_k_in_groups (dict): Dictionary mapping group IDs to lists of filenames.
-        d_dff (dict): Dictionary containing dF/F data matrices for each filename.
-        d_nspIDs (dict): Dictionary containing lists of filtered neuron IDs for each filename.
+        d_k_in_groups: Dictionary mapping group IDs to lists of filenames.
+        d_dff: Dictionary containing dF/F data matrices for each filename.
+        d_nspIDs: Dictionary containing lists of filtered neuron IDs for each filename.
 
     Returns:
-        filtered_d_k_in_groups (dict): Filtered dictionary where each group ID maps to a list of valid filenames.
+        filtered_d_k_in_groups: Filtered dictionary where each group ID maps to a list of valid filenames.
     """
     filtered_d_k_in_groups = {}
     for group_id, keys_in_group in d_k_in_groups.items():
@@ -216,27 +221,30 @@ def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs):
         filtered_d_k_in_groups[group_id] = filtered_keys_in_group
     return filtered_d_k_in_groups
 
-def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2, show_plots=False, save_files = False, output_dir = './wizard_staff_outputs'):
+def run_pwc(group_name: str, metadata_path: str, results_folder: str, poly: bool=False, 
+            pdeg: int=4, lw: float=1, lwp: float=0.5, psz: float=2, show_plots: bool=False, 
+            save_files: bool=False, output_dir: str='wizard_staff_outputs'
+            ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Processes data, computes metrics, generates plots, and stores them in DataFrames.
 
     Args:
-        group_name (str): Column name to group metadata by.
-        metadata_path (str): Path to the metadata CSV file.
-        results_folder (str): Path to the results folder.
-        poly (bool): Flag to control whether polynomial fitting is applied. Default is False.
-        pdeg (int): Degree for polynomial fitting. Default is 4.
-        lw (float): Line width for plots. Default is 1.
-        lwp (float): Line width for points. Default is 0.5.
-        psz (float): Point size for plots. Default is 2.
-        show_plots (bool): Flag to control whether plots are displayed. Default is False.
-        save_files (bool): Flag to control whether plots and dataframes are saved to files. Default is False.
-        output_dir (str): Directory where output files will be saved. Default is './wizard_staff_outputs'.
-    
+        group_name: Column name to group metadata by.
+        metadata_path: Path to the metadata CSV file.
+        results_folder: Path to the results folder.
+        poly: Flag to control whether polynomial fitting is applied. Default is False.
+        pdeg: Degree for polynomial fitting. Default is 4.
+        lw: Line width for plots. Default is 1.
+        lwp: Line width for points. Default is 0.5.
+        psz: Point size for plots. Default is 2.
+        show_plots: Flag to control whether plots are displayed. Default is False.
+        save_files: Flag to control whether plots and dataframes are saved to files. Default is False.
+        output_dir: Directory where output files will be saved. Default is 'wizard_staff_outputs'.
+
     Returns:
-        df_mn_pwc (pd.DataFrame): DataFrame containing overall pairwise correlation metrics.
-        df_mn_pwc_inter (pd.DataFrame): DataFrame containing inter-group pairwise correlation metrics.
-        df_mn_pwc_intra (pd.DataFrame): DataFrame containing intra-group pairwise correlation metrics.
+        df_mn_pwc: DataFrame containing overall pairwise correlation metrics.
+        df_mn_pwc_inter: DataFrame containing inter-group pairwise correlation metrics.
+        df_mn_pwc_intra: DataFrame containing intra-group pairwise correlation metrics.
     """
     # Load and preprocess the metadata
     metadata_df = load_and_process_metadata(metadata_path)
@@ -264,17 +272,23 @@ def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, l
     fname = os.path.splitext(os.path.basename(results_folder))[0]
 
     # Plotting and saving figures
-    plot_pwc_means(d_mn_pwc_inter, title = 'Inter_Group_Mean_PWC', xlabel = 'Groups', ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
-                show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
-                )
+    plot_pwc_means(
+        d_mn_pwc_inter, title = 'Inter_Group_Mean_PWC', xlabel = 'Groups', 
+        ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
+        show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
+    )
 
-    plot_pwc_means(d_mn_pwc_intra, title = 'Intra_Group_Mean_PWC', xlabel = 'Groups', ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
-                show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
-                )
+    plot_pwc_means(
+        d_mn_pwc_intra, title = 'Intra_Group_Mean_PWC', xlabel = 'Groups',
+         ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
+        show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
+    )
 
-    plot_pwc_means(d_mn_pwc, title = 'PWC', xlabel = 'Groups', ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
-                show_plots=show_plots, save_files = save_files, fname = fname, output_dir = output_dir
-                )
+    plot_pwc_means(
+        d_mn_pwc, title = 'PWC', xlabel = 'Groups', ylabel = 'Mean Pairwise Correlation', 
+        poly = poly, lwp = lwp, psz = psz, pdeg = 4, show_plots=show_plots, 
+        save_files = save_files, fname = fname, output_dir = output_dir
+    )
 
     # Save DataFrames if required
     if save_files:
@@ -298,7 +312,10 @@ def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, l
 
     return df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
 
-def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False):
+def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlabel: str='Groups', 
+                   ylabel: str='Mean Pairwise Correlation', poly: bool=False, lwp: float=1, 
+                   psz: float=5, pdeg: int=4, show_plots: bool=True, save_files: bool=False
+                   ) -> None:
     """
     Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
 

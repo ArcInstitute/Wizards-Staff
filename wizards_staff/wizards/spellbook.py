@@ -1,20 +1,26 @@
+# import
+## batteries
+from typing import Dict, List, Tuple
+## 3rd party
 import numpy as np
 from skimage.io import imread 
 from skimage.measure import label, regionprops
 from caiman.source_extraction.cnmf import deconvolution
 
-def convert_f_to_cs(fluorescence_data, p=2, noise_range=[0.25, 0.5]):
+# functions
+def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[0.25, 0.5]
+                    ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Converts fluorescence data to calcium and spike signals using deconvolution.
     
-    Parameters:
-    fluorescence_data (ndarray): Fluorescence data matrix with neurons as rows and time points as columns.
-    p (int): Order of the autoregressive process.
-    noise_range (list): Range for estimating noise.
+    Args:
+        fluorescence_data: Fluorescence data matrix with neurons as rows and time points as columns.
+        p: Order of the autoregressive process.
+        noise_range: Range for estimating noise.
     
     Returns:
-    calcium_signal (ndarray): Calcium signal matrix.
-    spike_signal (ndarray): Spike signal matrix.
+        calcium_signal: Calcium signal matrix.
+        spike_signal: Spike signal matrix.
     """
     # Initialize arrays for calcium and spike signals
     calcium_signal = np.zeros_like(fluorescence_data)
@@ -37,18 +43,19 @@ def convert_f_to_cs(fluorescence_data, p=2, noise_range=[0.25, 0.5]):
     
     return calcium_signal, spike_signal
 
-def calc_rise_tm(calcium_signals, spike_zscores, zscore_threshold=3):
+def calc_rise_tm(calcium_signals: np.ndarray, spike_zscores: np.ndarray, 
+                 zscore_threshold: float=3) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
     """
     Calculates the rise time of calcium signals based on spike detection.
     
-    Parameters:
-    calcium_signals (ndarray): Calcium signal matrix with neurons as rows and time points as columns.
-    spike_zscores (ndarray): Z-scored spike signal matrix.
-    zscore_threshold (float): Z-score threshold for spike detection.
+    Args:
+        calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
+        spike_zscores: Z-scored spike signal matrix.
+        zscore_threshold: Z-score threshold for spike detection.
     
     Returns:
-    rise_times (dict): Dictionary of rise times for each neuron.
-    rise_positions (dict): Dictionary of positions corresponding to the rise times for each neuron.
+        rise_times: Dictionary of rise times for each neuron.
+        rise_positions: Dictionary of positions corresponding to the rise times for each neuron.
     """
     rise_times = {}
     rise_positions = {}
@@ -89,21 +96,23 @@ def calc_rise_tm(calcium_signals, spike_zscores, zscore_threshold=3):
     
     return rise_times, rise_positions
 
-def calc_fwhm_spikes(calcium_signals, spike_zscores, zscore_threshold=3, percentage_threshold=0.2):
+def calc_fwhm_spikes(calcium_signals: np.ndarray, spike_zscores: np.ndarray, 
+                     zscore_threshold: float=3, percentage_threshold: float=0.2
+                     ) -> Tuple[Dict[int, List[int]], Dict[int, List[int]], Dict[int, List[int]], Dict[int, List[int]]]:
     """
     Calculates the full width at half maximum (FWHM) of spikes in calcium signals.
     
-    Parameters:
-    calcium_signals (ndarray): Calcium signal matrix with neurons as rows and time points as columns.
-    spike_zscores (ndarray): Z-scored spike signal matrix.
-    zscore_threshold (float): Z-score threshold for spike detection.
-    percentage_threshold (float): Percentage threshold for determining half maximum.
+    Args:
+        calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
+        spike_zscores: Z-scored spike signal matrix.
+        zscore_threshold: Z-score threshold for spike detection.
+        percentage_threshold: Percentage threshold for determining half maximum.
     
     Returns:
-    fwhm_backward_positions (dict): Dictionary of backward positions of FWHM for each neuron.
-    fwhm_forward_positions (dict): Dictionary of forward positions of FWHM for each neuron.
-    fwhm_values (dict): Dictionary of FWHM values for each neuron.
-    spike_counts (dict): Dictionary of the number of spikes within the FWHM for each neuron.
+        fwhm_backward_positions: Dictionary of backward positions of FWHM for each neuron.
+        fwhm_forward_positions: Dictionary of forward positions of FWHM for each neuron.
+        fwhm_values: Dictionary of FWHM values for each neuron.
+        spike_counts: Dictionary of the number of spikes within the FWHM for each neuron.
     """
     fwhm_values = {}
     fwhm_backward_positions = {}
@@ -169,18 +178,19 @@ def calc_fwhm_spikes(calcium_signals, spike_zscores, zscore_threshold=3, percent
     
     return fwhm_backward_positions, fwhm_forward_positions, fwhm_values, spike_counts
 
-def calc_frpm(zscored_spike_events, neuron_ids, fps, zscore_threshold=5):
+def calc_frpm(zscored_spike_events: np.ndarray, neuron_ids: np.ndarray, fps: int, 
+              zscore_threshold: int=5) -> float:
     """
     Calculates the firing rate per minute (FRPM) for given z-scored spike event data.
     
-    Parameters:
-    zscored_spike_events (ndarray): Z-scored spike events with neurons as rows and time points as columns.
-    neuron_ids (ndarray): Array containing neuron IDs.
-    fps (int): Frames per second of the recording.
-    zscore_threshold (int): Z-score threshold for detecting spikes.
+    Args:
+        zscored_spike_events: Z-scored spike events with neurons as rows and time points as columns.
+        neuron_ids: Array containing neuron IDs.
+        fps: Frames per second of the recording.
+        zscore_threshold: Z-score threshold for detecting spikes.
     
     Returns:
-    frpm (float): Average firing rate per minute for the dataset.
+        frpm: Average firing rate per minute for the dataset.
     """
     # Filter z-scored spike events for valid neuron IDs
     valid_spike_zscores = zscored_spike_events[neuron_ids, :]
@@ -206,42 +216,34 @@ def calc_frpm(zscored_spike_events, neuron_ids, fps, zscore_threshold=5):
     
     return frpm, spike_dict
 
-def calc_mask_shape_metrics(mask_path):
+def calc_mask_shape_metrics(mask_image: str) -> Dict[str, float]:
     """
     Loads a binary mask image and calculates roundness, diameter, and area of the masked spheroid/organoid.
 
     Args:
-        mask_path (str): Path to the mask image.
+        mask_path: Path to the mask image.
 
     Returns:
-        dict: Dictionary containing roundness, diameter, and area of the masked object.
+        Dictionary containing roundness, diameter, and area of the masked object.
     """
-    try:
-        mask_image = imread(mask_path)
-        labeled_image = label(mask_image)
-        properties = regionprops(labeled_image)
+    if mask_image is None:
+        return {}
+    
+    # Get mask properties
+    labeled_image = label(mask_image)
+    properties = regionprops(labeled_image)
 
-        if properties:
-            prop = properties[0]  # Assuming there's only one region in the mask
-            area = prop.area
-            perimeter = prop.perimeter
-            diameter = prop.equivalent_diameter
-            roundness = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
-            return {
-                'roundness': roundness,
-                'diameter': diameter,
-                'area': area
-            }
-        else:
-            return {
-                'roundness': None,
-                'diameter': None,
-                'area': None
-            }
-    except Exception as e:
-        print(f"Error calculating mask metrics: {e}")
+    # Calculate shape metrics
+    if properties:
+        prop = properties[0]  # Assuming there's only one region in the mask
+        area = prop.area
+        perimeter = prop.perimeter
+        diameter = prop.equivalent_diameter
+        roundness = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0
         return {
-            'roundness': None,
-            'diameter': None,
-            'area': None
+            'roundness': roundness,
+            'diameter': diameter,
+            'area': area
         }
+    return {}
+
