@@ -91,6 +91,7 @@ class Orb:
         """
         # Load metadata
         self._load_metadata(self.metadata_file_path)
+        self._samples = set(self.metadata['Sample'].tolist())
 
         # load files 
         for file_path in self._list_files(self.results_folder):
@@ -103,26 +104,27 @@ class Orb:
                 if file_basename.startswith(sample):
                     sample_name = sample
                     break
-            if sample_name is None:
+            ### filter out samples not in metadata
+            if sample_name is None or sample_name not in self._samples:
                 continue
             ## suffix
             file_suffix = file_basename[len(sample_name)+1:]
-            ## categorize file based on suffix and extension
-            for data_item, info in self._data_mapping.items():
-                suffixes = info['suffixes']
+            ## categorize file based on suffix
+            for data_item, data_info in self._data_mapping.items():
+                suffixes = data_info['suffixes']
                 if any(file_suffix.endswith(x) for x in suffixes):
-                    self._file_paths[data_item][sample_name] = file_path
+                    self._file_paths[sample_name][data_item] = file_path
                     break
 
         # check for missing files
-        for data_item, sample_info in self._data_mapping.items():
+        for data_item in self._data_mapping.keys():
             missing_samples = []
-            for sample in self.metadata['Sample'].tolist():
-                if sample not in self._file_paths[data_item]:
+            for sample in self._samples:
+                if self._file_paths.get(sample, {}).get(data_item) is None:
                     missing_samples.append(sample)
             if len(missing_samples) > 0:
                 missing_samples = ', '.join(missing_samples)
-                msg = f"No '{data_item}' files found for samples: {missing_samples}"
+                msg = f"WARNING: No '{data_item}' files found for samples: {missing_samples}"
                 print(msg, file=sys.stderr)
     
     def _load_metadata(self, metadata_file_path):
@@ -137,24 +139,10 @@ class Orb:
             if col not in self.metadata.columns:
                 raise ValueError(f"Column '{col}' not found in metadata file: {metadata_file_path}")
 
-    @staticmethod
-    def _list_files(indir):
-        files = []
-        for dirpath, dirnames, filenames in os.walk(indir):
-            for filename in filenames:
-                files.append(os.path.join(dirpath, filename))
-        return files
-
-    # @staticmethod
-    # def _load_file(file_path):
-    #     if file_path.endswith('.npy'):
-    #         return np.load(file_path, allow_pickle=True)
-    #     elif file_path.endswith('.tif'):
-    #         return imread(file_path)
-    #     else:
-    #         raise ValueError(f"Unknown file extension for file: {path}")
-
-    def get_data_item(self, data_item, sample):
+    def get_data_item(self, data_item: str, sample: str) -> object:
+        """
+        Get data item for a sample.
+        """
         if self._data.get(data_item, {}).get(sample) is None:
             # load the data
             file_path = self._file_paths.get(data_item, {}).get(sample)
@@ -170,14 +158,42 @@ class Orb:
                 print(f"File not found for data item '{data_item}' and sample '{sample}'", file=sys.stderr)
             return data
 
-    def list_data_items(self):
+    def list_samples(self):
+        """
+        List all samples
+        """
         return list(self._file_paths.keys())
 
-    def list_samples(self):
-        samples = dict()
-        for data_item,sample_files in self._file_paths.items():
-            samples[data_item] = sample_files.keys()
-        return samples
+    def list_data_items(self, sample: str=None):
+        """
+        List all data items for all samples
+        """
+        if sample is not None:
+            # list data items for a sample
+            return list(self._file_paths.get(sample, {}).keys())
+        else:
+            # list samples per data item
+            data_items = dict()
+            for sample,data_item in self._file_paths.items():
+                for k,v in data_item.items():
+                    try:
+                        data_items[k].append(sample)
+                    except KeyError:
+                        data_items[k] = [sample]
+            return data_items
+
+    @staticmethod
+    def _list_files(indir):
+        files = []
+        for dirpath, dirnames, filenames in os.walk(indir):
+            for filename in filenames:
+                files.append(os.path.join(dirpath, filename))
+        return files
+
+    # iter
+    def items(self):
+        for sample, data_items in self._file_paths.items():
+            yield sample, data_items
 
     # def __getattr__(self, data_item):
     #     if data_item in self._data_mapping:
