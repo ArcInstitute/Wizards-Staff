@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import Callable
 from collections import defaultdict
 from dataclasses import dataclass, field
 import numpy as np
@@ -56,17 +57,50 @@ DATA_ITEM_MAPPING = {
     # },
 }
 
-# @dataclass
-# class Shard:
-#     """
-#     A file component of a Wizard Orb object
-#     """
-#     sample_name: str
-#     file_path: str
-#     data: object = field(init=False)
+@dataclass
+class Shard:
+    """
+    A file component of a Wizard Orb object
+    """
+    sample_name: str
+    metadata: pd.DataFrame
+    files: dict
+    _data_items: dict = field(default_factory=dict, init=False) 
     
-#     #def __post_init__(self):
-#     #    self.data = load_file(self.file_path)
+    def get_data_item(self, item_name: str) -> object:
+        """
+        Get data item for a sample.
+        """
+        if self._data_items.get(item_name) is None:
+            # load the data
+            file_path,loader = self._files.get(item_names, (None,None))
+            if file_path is not None and loader is not None:
+                self._data_items[item_name] = loader(file_path)
+            else:
+                #raise ValueError(f"File not found for data item '{data_item}' and sample '{sample}'")
+                return None
+        else:
+            data = self._data.get(item_name, {})
+            if data is None:
+                print(f"File not found for data item '{item_name}' and sample '{self.sample}'", file=sys.stderr)
+            return data
+
+    def has_file(self, item_name: str) -> bool:
+        """
+        Check if a data item is available for a sample.
+        """
+        return item_name in self.files
+
+    def get_data_items(self):
+        for key in self._files.keys():
+            yield key
+
+    def items(self):
+        for key, value in self._data_items.items():
+            yield key, value
+
+    def get(self, item_name):
+        return self._data_items.get(key)
 
 
 @dataclass
@@ -77,12 +111,11 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
-    _file_paths: dict = field(init=False)
-    _data: defaultdict = field(default_factory=dict, init=False)   # loaded data
+    _shards: dict = field(default_factory=dict, init=False)   # loaded data
     _data_mapping: dict = field(default_factory=lambda: DATA_ITEM_MAPPING, init=False)  # data item mapping
     
     def __post_init__(self):
-        self._file_paths = defaultdict(dict)
+        self._shards = dict()
         self._categorize_files()   # run categorization upon initialization
 
     def _categorize_files(self):
@@ -94,6 +127,7 @@ class Orb:
         self._samples = set(self.metadata['Sample'].tolist())
 
         # load files 
+        #self._file_paths = defaultdict(dict)
         for file_path in self._list_files(self.results_folder):
             # get file info 
             ## basename
@@ -113,14 +147,26 @@ class Orb:
             for data_item, data_info in self._data_mapping.items():
                 suffixes = data_info['suffixes']
                 if any(file_suffix.endswith(x) for x in suffixes):
-                    self._file_paths[sample_name][data_item] = file_path
+                    try:
+                        shard = self._shards[sample_name]
+                    except KeyError:
+                        meta = self.metadata[self.metadata['Sample'] == sample_name]
+                        shard = Shard(sample_name, metadata=meta, files={})
+                        self._shards[sample_name] = shard
+                    # add file to shard
+                    shard.files[data_item] = (file_path, data_info['loader'])
                     break
 
         # check for missing files
-        for data_item in self._data_mapping.keys():
+        for item_name in self._data_mapping.keys():
             missing_samples = []
             for sample in self._samples:
-                if self._file_paths.get(sample, {}).get(data_item) is None:
+                try:
+                    # sample has file?
+                    if self._shards[sample].has_file(item_name) is False:
+                        missing_samples.append(sample)
+                except KeyError:
+                    # no sample?
                     missing_samples.append(sample)
             if len(missing_samples) > 0:
                 missing_samples = ', '.join(missing_samples)
@@ -139,48 +185,31 @@ class Orb:
             if col not in self.metadata.columns:
                 raise ValueError(f"Column '{col}' not found in metadata file: {metadata_file_path}")
 
-    def get_data_item(self, data_item: str, sample: str) -> object:
-        """
-        Get data item for a sample.
-        """
-        if self._data.get(data_item, {}).get(sample) is None:
-            # load the data
-            file_path = self._file_paths.get(data_item, {}).get(sample)
-            loader = self._data_mapping.get(data_item, {}).get('loader')
-            if file_path is not None and loader is not None:
-                self._data[data_item][sample] = loader(file_path)
-            else:
-                #raise ValueError(f"File not found for data item '{data_item}' and sample '{sample}'")
-                return None
-        else:
-            data = self._data.get(data_item, {}).get(sample)
-            if data is None:
-                print(f"File not found for data item '{data_item}' and sample '{sample}'", file=sys.stderr)
-            return data
-
     def list_samples(self):
         """
         List all samples
         """
-        return list(self._file_paths.keys())
+        return list(self._shards.keys())
 
-    def list_data_items(self, sample: str=None):
+    def list_data_items(self, sample: str=):
         """
         List all data items for all samples
         """
-        if sample is not None:
-            # list data items for a sample
-            return list(self._file_paths.get(sample, {}).keys())
-        else:
-            # list samples per data item
-            data_items = dict()
-            for sample,data_item in self._file_paths.items():
-                for k,v in data_item.items():
-                    try:
-                        data_items[k].append(sample)
-                    except KeyError:
-                        data_items[k] = [sample]
-            return data_items
+        try:
+            return list(self._shards.get(sample).get_data_items())
+        except KeyError:
+            print(f"Sample '{sample}' not found", file=sys.stderr)
+            return []
+
+    # iter over shards
+    def shatter(self):
+        for v in self._shards.values():
+            yield v
+
+    # iter over samples and shards
+    def items(self):
+        for sample, shard in self._shards.items():
+            yield sample, shard 
 
     @staticmethod
     def _list_files(indir):
@@ -189,11 +218,6 @@ class Orb:
             for filename in filenames:
                 files.append(os.path.join(dirpath, filename))
         return files
-
-    # iter
-    def items(self):
-        for sample, data_items in self._file_paths.items():
-            yield sample, data_items
 
     # def __getattr__(self, data_item):
     #     if data_item in self._data_mapping:
