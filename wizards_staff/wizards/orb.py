@@ -1,12 +1,18 @@
 import os
 import sys
-from typing import Callable
+import logging
+from typing import Callable, Dict, Any, Generator, Tuple
 from collections import defaultdict
 from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from tifffile import imread
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Data item mapping (how to load each data item)
 DATA_ITEM_MAPPING = {
     'cnm_A': {
         'suffixes': ['cnm-A.npy'],
@@ -44,88 +50,98 @@ DATA_ITEM_MAPPING = {
         'suffixes': ['masks.tif'],
         'loader': lambda x: imread(x)
     }
-    # 'cn_filter': {
-    #     'suffixes': ['cn_filter'],
-    #     'extensions': ['.npy', '.tif']
-    # },
-    # 'corr_pnr_histograms': {
-    #     'suffixes': ['corr-pnr-histograms.tif']
-    # },
-    # 'pnr_filter': {
-    #     'suffixes': ['pnr_filter'],
-    #     'extensions': ['.npy', '.tif']
-    # },
 }
 
+#-- classes --#
 @dataclass
 class Shard:
     """
-    A file component of a Wizard Orb object
+    A per-sample component of a Wizard Orb object.
     """
     sample_name: str
     metadata: pd.DataFrame
     files: dict
     _data_items: dict = field(default_factory=dict, init=False) 
     
-    def get_data_item(self, item_name: str) -> object:
+    def get_data_item(self, item_name: str) -> Any:
         """
-        Get data item for a sample.
+        Retrieves the data item for the given name, loading it if not already loaded.
         """
-        if self._data_items.get(item_name) is None:
-            # load the data
-            file_path,loader = self._files.get(item_names, (None,None))
-            if file_path is not None and loader is not None:
-                self._data_items[item_name] = loader(file_path)
+        if item_name not in self._data_items:
+            # load file
+            file_info = self.files.get(item_name)
+            if file_info:
+                file_path, loader = file_info
+                # check that file exists
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                # load via the loader
+                try:
+                    self._data_items[item_name] = loader(file_path)
+                except Exception as e:
+                    logger.error(f"Failed to load data item '{item_name}' for sample '{self.sample_name}': {e}")
+                    return None
             else:
-                #raise ValueError(f"File not found for data item '{data_item}' and sample '{sample}'")
+                logger.warning(f"File not found for data item '{item_name}' and sample '{self.sample_name}'")
                 return None
-        else:
-            data = self._data.get(item_name, {})
-            if data is None:
-                print(f"File not found for data item '{item_name}' and sample '{self.sample}'", file=sys.stderr)
-            return data
+        return self._data_items[item_name]
 
     def has_file(self, item_name: str) -> bool:
         """
-        Check if a data item is available for a sample.
+        Checks if a data item is available for this sample.
         """
         return item_name in self.files
 
-    def get_data_items(self):
-        for key in self._files.keys():
-            yield key
+    def get_data_items(self) -> Generator[str, None, None]:
+        """
+        Yields all data item names available for this sample.
+        """
+        yield from self.files.keys()
 
-    def items(self):
-        for key, value in self._data_items.items():
-            yield key, value
+    def items(self) ->  Generator[Tuple[str, Any], None, None]:
+        """
+        Yields tuples of data item names and their loaded data.
+        """
+        for key in self._data_items:
+            yield key, self._data_items[key]
 
-    def get(self, item_name):
-        return self._data_items.get(key)
+    def get(self, item_name: str) -> Any:
+        """
+        Retrieves the data item, loading it if necessary.
+        """
+        return self.get_data_item(item_name)
 
+    def __str__(self):
+        """
+        Prints data_item_name : file_path for this shard.
+        """
+        ret = []
+        for data_item_name, (file_path, _) in self.files.items():
+            ret.append(f"{data_item_name} : {file_path}")
+        return '\n'.join(ret)
 
 @dataclass
 class Orb:
     """
-    A class to represent a Wizard Orb.
+    Represents a collection of samples and their associated data shards.
     """
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
-    _shards: dict = field(default_factory=dict, init=False)   # loaded data
-    _data_mapping: dict = field(default_factory=lambda: DATA_ITEM_MAPPING, init=False)  # data item mapping
+    _shards: Dict[str, Shard] = field(default_factory=dict, init=False)   # loaded data
+    _data_mapping: Dict[str, Any] = field(default_factory=lambda: DATA_ITEM_MAPPING, init=False)  # data item mapping
     
     def __post_init__(self):
-        self._shards = dict()
-        self._categorize_files()   # run categorization upon initialization
+        # load metadata
+        self._load_metadata(self.metadata_file_path)
+        self._samples = set(self.metadata['Sample'])
+        # run categorization upon initialization
+        self._categorize_files()   
 
     def _categorize_files(self):
         """
-        For all data items, categorize the files into the corresponding data items.
+        Categorizes files into corresponding data items for each sample.
         """
-        # Load metadata
-        self._load_metadata(self.metadata_file_path)
-        self._samples = set(self.metadata['Sample'].tolist())
-
         # load files 
         #self._file_paths = defaultdict(dict)
         for file_path in self._list_files(self.results_folder):
@@ -144,17 +160,17 @@ class Orb:
             ## suffix
             file_suffix = file_basename[len(sample_name)+1:]
             ## categorize file based on suffix
-            for data_item, data_info in self._data_mapping.items():
-                suffixes = data_info['suffixes']
-                if any(file_suffix.endswith(x) for x in suffixes):
-                    try:
-                        shard = self._shards[sample_name]
-                    except KeyError:
-                        meta = self.metadata[self.metadata['Sample'] == sample_name]
-                        shard = Shard(sample_name, metadata=meta, files={})
-                        self._shards[sample_name] = shard
-                    # add file to shard
-                    shard.files[data_item] = (file_path, data_info['loader'])
+            for item_name, data_info in self._data_mapping.items():
+                if any(file_suffix.endswith(suffix) for suffix in data_info['suffixes']):
+                    shard = self._shards.setdefault(
+                        sample_name,
+                        Shard(
+                            sample_name,
+                            metadata=self.metadata[self.metadata['Sample'] == sample_name],
+                            files={}
+                        )
+                    )
+                    shard.files[item_name] = (file_path, data_info['loader'])
                     break
 
         # check for missing files
@@ -170,46 +186,72 @@ class Orb:
                     missing_samples.append(sample)
             if len(missing_samples) > 0:
                 missing_samples = ', '.join(missing_samples)
-                msg = f"WARNING: No '{data_item}' files found for samples: {missing_samples}"
+                msg = f"WARNING: No '{item_name}' files found for samples: {missing_samples}"
                 print(msg, file=sys.stderr)
     
-    def _load_metadata(self, metadata_file_path):
+    def _load_metadata(self, metadata_file_path: str):
         # check if metadata file exists
         if not os.path.exists(metadata_file_path):
             raise FileNotFoundError(f"Metadata file not found: {metadata_file_path}")
         # load metadata
         self.metadata = pd.read_csv(metadata_file_path)
         # check for required columns
-        required_columns = ["Sample", "Well", "Frate"]
-        for col in required_columns:
-            if col not in self.metadata.columns:
-                raise ValueError(f"Column '{col}' not found in metadata file: {metadata_file_path}")
+        required_columns = {"Sample", "Well", "Frate"}
+        missing_columns = required_columns - set(self.metadata.columns)
+        if missing_columns:
+            cols_str = ', '.join(missing_columns)
+            raise ValueError(f"Missing columns in metadata file: {cols_str}")
 
-    def list_samples(self):
+    def list_samples(self) -> list:
         """
-        List all samples
+        Returns a list of all sample names.
         """
         return list(self._shards.keys())
 
-    def list_data_items(self, sample: str=):
+    def list_data_items(self, sample: str) -> list:
         """
-        List all data items for all samples
+        Lists all data items for a given sample.
         """
-        try:
-            return list(self._shards.get(sample).get_data_items())
-        except KeyError:
-            print(f"Sample '{sample}' not found", file=sys.stderr)
+        shard = self._shards.get(sample)
+        if shard:
+            return list(shard.get_data_items())
+        else:
+            logger.warning(f"Sample '{sample}' not found")
             return []
 
-    # iter over shards
-    def shatter(self):
-        for v in self._shards.values():
-            yield v
+    def shatter(self) -> Generator[Shard, None, None]:
+        """
+        Yields each Shard (sample's data) in the Orb.
+        """
+        yield from self._shards.values()
 
-    # iter over samples and shards
-    def items(self):
-        for sample, shard in self._shards.items():
-            yield sample, shard 
+    def items(self) -> Generator[Tuple[str, Shard], None, None]:
+        """
+        Yields tuples of sample names and their Shard objects.
+        """
+        yield from self._shards.items()
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with all data items and file paths.
+        """
+        DF = []
+        for sample_name, shard in self._shards.items():
+            for data_item_name, (file_path, _) in shard.files.items():
+                DF.append([sample_name, data_item_name, file_path])
+        DF = pd.DataFrame(DF, columns=['Sample', 'DataItem', 'FilePath'])
+        # merge with metadata
+        return pd.merge(DF, self.metadata, on='Sample', how='left')
+
+    def __str__(self):
+        """
+        Prints sample : data_item_name : file_path for all shards.
+        """
+        ret = []
+        for sample_name, shard in self._shards.items():
+            for data_item_name, (file_path, _) in shard.files.items():
+                ret.append(f"{sample_name} : {data_item_name} : {file_path}")
+        return '\n'.join(ret)
 
     @staticmethod
     def _list_files(indir):
