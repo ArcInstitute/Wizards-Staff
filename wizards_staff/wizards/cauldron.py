@@ -60,10 +60,6 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
     # Load as data object
     orb = Orb(results_folder, metadata_path)
 
-    # Scan output folder for files necessary for processing based on their prefixes and extensions
-    #categorized_files = categorize_files(results_folder, metadata_path)
-    #exit()
-
     # Initialize lists to store data for each metric type
     # rise_time_data = []
     # fwhm_data = []
@@ -261,7 +257,7 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
 
     # Perform K-means clustering and plot
     silhouette_score, num_clusters = plot_kmeans_heatmap(
-        dff_data = shard.get('dff_dat', req=True), 
+        dff_dat = shard.get('dff_dat', req=True), 
         filtered_idx = filtered_idx, 
         sample_name = shard.sample_name,
         min_clusters = min_clusters, 
@@ -273,15 +269,15 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
     )
 
     # Append silhouette score to the list
-    silhouette_scores_data.append({
+    shard.silhouette_scores_data = {
         'Sample': shard.sample_name,
         'Silhouette Score': silhouette_score,
         'Number of Clusters': num_clusters
-    })
+    }
 
     # Plot cluster activity
     plot_cluster_activity(
-        dff_data = shard.get('dff_dat', req=True), 
+        dff_dat = shard.get('dff_dat', req=True), 
         filtered_idx = filtered_idx, 
         min_clusters = min_clusters, 
         max_clusters = max_clusters, 
@@ -295,28 +291,29 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
 
     # Plot spatial activity map
     plot_spatial_activity_map(
-        shard.get('minprojection'),  #['im_min'], 
-        shard.get('cnm_A'), 
+        shard.get('minprojection', req=True),  #['im_min'], 
+        shard.get('cnm_A', req=True), 
         filtered_idx, 
         shard.sample_name,
         min_clusters = min_clusters, 
         max_clusters = max_clusters, 
-        random_seed= random_seed,
+        random_seed = random_seed,
         show_plots = show_plots, 
-        save_files = save_files
+        save_files = save_files,
+        dff_dat = shard.get('dff_dat')
     )
     
     # Plot spatial activity map with clustering
     plot_spatial_activity_map(
-        shard.get('minprojection'),  #['im_min'], 
-        shard.get('cnm_A'), 
+        shard.get('minprojection', req=True),  #['im_min'], 
+        shard.get('cnm_A', req=True), 
         filtered_idx, 
         shard.sample_name,
         min_clusters = min_clusters, 
         max_clusters = max_clusters, 
         random_seed= random_seed,
         clustering = True, 
-        dff_data = shard.get('dff_dat', req=True), 
+        dff_dat = shard.get('dff_dat', req=True), 
         show_plots = show_plots, 
         save_files = save_files
     )

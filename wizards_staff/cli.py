@@ -2,6 +2,10 @@
 import os
 import sys
 import argparse
+import logging
+
+# logging
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.DEBUG)
 
 # argparse
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
