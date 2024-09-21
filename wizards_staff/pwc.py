@@ -1,6 +1,7 @@
 # import
 ## batteries
 import os
+import logging
 from typing import Tuple
 ## third party
 import numpy as np
@@ -13,6 +14,10 @@ from sklearn.linear_model import LinearRegression
 ## package
 from wizards_staff.metadata import load_and_process_metadata
 from wizards_staff.wizards.familiars import spatial_filtering #categorize_files, load_and_filter_files, 
+
+# logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # functions
 def calc_pwc_mn(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict, dff_cut: float=0.1, 

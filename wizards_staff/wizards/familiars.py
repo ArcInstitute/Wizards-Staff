@@ -1,6 +1,7 @@
 # import
 ## batteries
 import os
+import sys
 import logging
 from typing import List, Tuple
 from collections import defaultdict
@@ -10,6 +11,11 @@ from skimage.io import imread
 import matplotlib.pyplot as plt
 ## package
 from wizards_staff.plotting import plot_montage
+
+
+# logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # def list_files(indir):
 #     files = []
@@ -157,7 +163,7 @@ def spatial_filtering(p_th: float, size_threshold: int, cnm_A: np.ndarray, cnm_i
     Returns:
         filtered_idx (list): List of indices of the filtered components.
     """
-    logging.info('Applying spatial filtering to components...')
+    logger.info('Applying spatial filtering to components...')
 
     # Load the mask image and get its shape
     if plot:

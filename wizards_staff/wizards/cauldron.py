@@ -1,6 +1,10 @@
 # import
 ## batteries
 import os
+import logging
+from typing import Tuple
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor, as_completed
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -14,10 +18,17 @@ from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.wizards.familiars import spatial_filtering  # categorize_files, load_required_files, 
 from wizards_staff.wizards.orb import Orb, Shard
 
+# logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # functions
-def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75,  
-            min_clusters=2, max_clusters=10, random_seed = 1111111, group_name = None, poly = False,  
-            size_threshold = 20000, show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
+def run_all(results_folder: str, metadata_path: str, frate: int, zscore_threshold: int=3, 
+            percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
+            max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
+            poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
+            save_files: bool=True, output_dir: str='wizard_staff_outputs', 
+            threads: int=2) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
     
@@ -25,18 +36,19 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
         results_folder (str): Path to the results folder.
         metadata_path (str): Path to the metadata CSV file.
         frate (int): Frames per second of the imaging session.
-        zscore_threshold (int): Z-score threshold for spike detection. Default is 3.
-        percentage_threshold (float): Percentage threshold for FWHM calculation. Default is 0.2.
-        p_th (float): Percentile threshold for image processing. Default is 75.
-        min_clusters (int): The minimum number of clusters to try. Default is 2.
-        max_clusters (int): The maximum number of clusters to try. Default is 10.
-        random_seed (int): The seed for random number generation in K-means. Default is 1111111.
+        zscore_threshold (int): Z-score threshold for spike detection.
+        percentage_threshold (float): Percentage threshold for FWHM calculation.
+        p_th (float): Percentile threshold for image processing.
+        min_clusters (int): The minimum number of clusters to try.
+        max_clusters (int): The maximum number of clusters to try.
+        random_seed (int): The seed for random number generation in K-means.
         group_name (str): Name of the group to which the data belongs. Required for PWC analysis.
-        poly (bool): Flag to control whether to perform polynomial fitting during PWC analysis. Default is False.
+        poly (bool): Flag to control whether to perform polynomial fitting during PWC analysis.
         size_threshold (int): Size threshold for filtering out noise events.    
-        show_plots (bool): Flag to control whether plots are displayed. Default is True.
-        save_files (bool): Flag to control whether files are saved. Default is True.
-        output_dir (str): Directory where output files will be saved. Default is './wizard_staff_outputs'.
+        show_plots (bool): Flag to control whether plots are displayed. 
+        save_files (bool): Flag to control whether files are saved.
+        output_dir (str): Directory where output files will be saved.
+        threads (int): Number of threads to use for processing. 
         
     Returns:
         rise_time_df (pd.DataFrame): DataFrame containing rise time metrics.
@@ -57,48 +69,70 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
             - area: The area of the masked object.
         silhouette_scores_df (pd.DataFrame): DataFrame containing silhouette scores for K-means clustering.
     """
-    # Load as data object
+    # Load data from the results folder
     orb = Orb(results_folder, metadata_path)
 
-    # Initialize lists to store data for each metric type
-    # rise_time_data = []
-    # fwhm_data = []
-    # frpm_data = []
-    # mask_metrics_data = []
-    # silhouette_scores_data = []
+    # for shard in orb.shatter():
+    #     shard._mask_metrics_data.append({
+    #         'Sample': "test",
+    #         'Roundness': 0.1
+    #     })
+    #     print(shard.mask_metrics_data)
+    # print(orb.mask_metrics_data)
+    # exit();
 
+    # Check if the output directory exists
     if save_files:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         # Create the output directory if it does not exist
         os.makedirs(output_dir, exist_ok=True)
 
-    #for shard in tqdm(orb.shatter(), desc="Processing shards of the Wizard Orb"):
-    for shard in orb.shatter():
-        _run_all(
-            shard, frate, 
-            zscore_threshold=zscore_threshold, 
-            percentage_threshold=percentage_threshold,
-            p_th=p_th,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters, 
-            random_seed=random_seed,
-            group_name=group_name,
-            poly=poly,
-            size_threshold=size_threshold,
-            show_plots=show_plots,
-            save_files=save_files,
-            output_dir=output_dir
-        )
-
-    exit();
+    # Process each sample (shard) in parallel
+    func = partial(
+        _run_all, 
+        frate=frate, 
+        zscore_threshold=zscore_threshold, 
+        percentage_threshold=percentage_threshold,
+        p_th=p_th,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters, 
+        random_seed=random_seed,
+        group_name=group_name,
+        poly=poly,
+        size_threshold=size_threshold,
+        show_plots=show_plots,
+        save_files=save_files,
+        output_dir=output_dir
+    )
+    if threads == 1:
+        for shard in orb.shatter():
+            func(shard)
+    else:
+        with ProcessPoolExecutor() as executor:
+            logging.disable(logging.INFO)
+            desc = 'Processing shards of the Wizard Orb'
+            # Submit the function to the executor for each shard
+            futures = {executor.submit(func, shard) for shard in orb.shatter()}
+            # Use as_completed to get the results as they are completed
+            for future in tqdm(as_completed(futures), total=len(futures), desc=desc):
+                try:
+                    # Get the result from each completed future
+                    updated_shard = future.result()
+                    orb._shards[updated_shard.sample_name] = updated_shard
+                except Exception as e:
+                    # Handle any exception that occurred during the execution
+                    print(f'Exception occurred: {e}')
+            # Re-enable logging
+            logging.disable(logging.NOTSET)
 
     # Convert the lists to DataFrames
-    rise_time_df = pd.DataFrame(rise_time_data)
-    fwhm_df = pd.DataFrame(fwhm_data)
-    frpm_df = pd.DataFrame(frpm_data)
-    mask_metrics_df = pd.DataFrame(mask_metrics_data)
-    silhouette_scores_df = pd.DataFrame(silhouette_scores_data)
+    # print(orb.rise_time_data)
+    # print(orb.fwhm_data)
+    # print(orb.frpm_data)
+    # print(orb.mask_metrics_data)
+    # print(orb.silhouette_scores_data)
+    # exit();
     
     # Use explode to handle lists in DataFrames
     rise_time_df = rise_time_df.explode(['Rise Times', 'Rise Positions'])
@@ -156,12 +190,16 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
              p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 
              size_threshold: int, group_name: str = None, poly: bool = False,
              show_plots: bool = True, save_files: bool = True, 
-             output_dir: str = 'wizard_staff_outputs'):
+             output_dir: str = 'wizard_staff_outputs') -> Shard:
     """
     Process each shard of the Orb and compute metrics.
     Args:
         See run_all function.
-    """        
+    Returns:
+        shard: The updated shard
+    """    
+    logger.info(f'Processing shard: {shard.sample_name}')
+
     # Apply spatial filtering to the data to remove noise
     filtered_idx = spatial_filtering(
         #cn_filter=shard.get('cn_filter'), 
@@ -209,42 +247,39 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
 
     # Store the results in the respective lists
     for neuron_idx, rise_times in rise_tm.items():
-        shard.rise_time_data = {
+        shard._rise_time_data.append({
             'Sample': shard.sample_name,
             'Neuron': neuron_idx,
             'Rise Times': rise_times,
             'Rise Positions': rise_tm_pos[neuron_idx]
-        }
+        })
 
     for neuron_idx, fwhm_values in fwhm.items():
-        shard.fwhm_data = {
+        shard._fwhm_data.append({
             'Sample': shard.sample_name,
             'Neuron': neuron_idx,
             'FWHM Backward Positions': fwhm_pos_back[neuron_idx],
             'FWHM Forward Positions': fwhm_pos_fwd[neuron_idx],
             'FWHM Values': fwhm_values,
             'Spike Counts': spike_counts[neuron_idx]
-        }
+        })
 
     for neuron_idx, frpm_value in frpm.items():
-        shard.frpm_data = {
+        shard._frpm_data.append({
             'Sample': shard.sample_name,
             'Neuron Index': neuron_idx,
             'Firing Rate Per Min.': frpm_value
-        }
-
-    # Check if mask exists and calculate mask metrics if so
-    #mask = shard.get('mask')  #file_data['mask'] if file_data['mask'] else None
+        })
 
     # Calculate mask metrics and store them      
     if shard.get('mask') is not None:
         mask_metrics = calc_mask_shape_metrics(shard.get('mask'))
-    shard.mask_metrics_data = {
+    shard._mask_metrics_data.append({
         'Sample': shard.sample_name,
         'Roundness':  mask_metrics.get('roundness'),
         'Diameter': mask_metrics.get('diameter'),
         'Area': mask_metrics.get('area')
-    }
+    })
 
     # Create ΔF/F₀ graph
     plot_dff_activity(
@@ -257,23 +292,23 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
 
     # Perform K-means clustering and plot
     silhouette_score, num_clusters = plot_kmeans_heatmap(
-        dff_dat = shard.get('dff_dat', req=True), 
-        filtered_idx = filtered_idx, 
-        sample_name = shard.sample_name,
-        min_clusters = min_clusters, 
-        max_clusters = max_clusters, 
-        random_seed= random_seed, 
-        show_plots = show_plots, 
-        save_files = save_files, 
-        output_dir = output_dir
+        dff_dat=shard.get('dff_dat', req=True), 
+        filtered_idx=filtered_idx, 
+        sample_name=shard.sample_name,
+        min_clusters=min_clusters, 
+        max_clusters=max_clusters, 
+        random_seed=random_seed, 
+        show_plots=show_plots, 
+        save_files=save_files, 
+        output_dir=output_dir
     )
 
     # Append silhouette score to the list
-    shard.silhouette_scores_data = {
+    shard._silhouette_scores_data.append({
         'Sample': shard.sample_name,
         'Silhouette Score': silhouette_score,
         'Number of Clusters': num_clusters
-    }
+    })
 
     # Plot cluster activity
     plot_cluster_activity(
@@ -317,3 +352,5 @@ def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: f
         show_plots = show_plots, 
         save_files = save_files
     )
+
+    return shard

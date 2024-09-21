@@ -12,8 +12,11 @@ import pandas as pd
 from tifffile import imread
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def npy_loader(infile, allow_pickle=True):
+    return np.load(infile, allow_pickle=allow_pickle)
 
 # Data item mapping (how to load each data item)
 DATA_ITEM_MAPPING = {
@@ -27,39 +30,39 @@ DATA_ITEM_MAPPING = {
     # },
     'cnm_A': {
         'suffixes': ['_cnm-A.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'cnm_C': {
         'suffixes': ['_cnm-C.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'cnm_S': {
         'suffixes': ['_cnm-S.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'cnm_idx': {
         'suffixes': ['_cnm-idx.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'df_f0_graph': {
         'suffixes': ['_df-f0-graph.tif'],
-        'loader': lambda x: imread(x)
+        'loader': imread
     },
     'dff_dat': { 
         'suffixes': ['_dff-dat.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'f_dat': { 
         'suffixes': ['_f-dat.npy'],
-        'loader': lambda x: np.load(x, allow_pickle=True)
+        'loader': npy_loader
     },
     'minprojection': {    # aka: im_min
         'suffixes': ['_minprojection.tif'],
-        'loader': lambda x: imread(x)
+        'loader': imread
     },
     'mask': {  
         'suffixes': ['_masks.tif'],
-        'loader': lambda x: imread(x)
+        'loader': imread
     }
 }
 
@@ -72,11 +75,11 @@ class Shard:
     sample_name: str
     metadata: pd.DataFrame
     files: dict
-    rise_time_data = list
-    fwhm_data = list
-    frpm_data = list
-    mask_metrics_data = list
-    silhouette_scores_data = list
+    _rise_time_data: list = field(default_factory=list, init=False)
+    _fwhm_data: list = field(default_factory=list, init=False)
+    _frpm_data: list = field(default_factory=list, init=False)
+    _mask_metrics_data: list = field(default_factory=list, init=False)
+    _silhouette_scores_data: list = field(default_factory=list, init=False)
     _data_items: dict = field(default_factory=dict, init=False) 
     
     def get_data_item(self, item_name: str) -> Any:
@@ -135,6 +138,22 @@ class Shard:
             raise ValueError(f"Data item '{item_name}' not found for sample '{self.sample_name}'")
         return data_item
 
+    # def _get_data(self, attr_name: str) -> pd.DataFrame:
+    #     """Dynamically generate a DataFrame for the given attribute from shards."""
+    #     print('here');
+    #     attr = getattr(self, attr_name)
+    #     if attr is None or :
+    #         # Create DataFrame if it doesn't exist
+    #         shard_data = getattr(self, attr_name, None)
+    #         if shard_data is not None:
+    #             return None
+    #         print(shard_data); exit()
+    #         attr = pd.DataFrame(shard_data)
+    #         print(attr); exit()
+    #         # Cache the result
+    #         setattr(self, attr_name, attr)  
+    #     return attr
+
     def __str__(self) -> str:
         """
         Prints data_item_name : file_path for this shard.
@@ -144,6 +163,28 @@ class Shard:
             ret.append(f"{data_item_name} : {file_path}")
         return '\n'.join(ret)
 
+    # properties
+    @property
+    def rise_time_data(self):
+        return self._rise_time_data
+    
+    @property
+    def fwhm_data(self):
+        return self._fwhm_data
+    
+    @property
+    def frpm_data(self):
+        return self._frpm_data
+
+    @property
+    def mask_metrics_data(self):
+        return self._mask_metrics_data
+    
+    @property
+    def silhouette_scores_data(self):  
+        return self._silhouette_scores_data
+
+
 @dataclass
 class Orb:
     """
@@ -152,6 +193,11 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
+    _rise_time_data: pd.DataFrame = field(default=None, init=False)
+    _fwhm_data: pd.DataFrame = field(default=None, init=False)
+    _frpm_data: pd.DataFrame = field(default=None, init=False)
+    _mask_metrics_data: pd.DataFrame = field(default=None, init=False)
+    _silhouette_scores_data: pd.DataFrame = field(default=None, init=False)
     _shards: Dict[str, Shard] = field(default_factory=dict, init=False)   # loaded data
     _data_mapping: Dict[str, Any] = field(default_factory=lambda: DATA_ITEM_MAPPING, init=False)  # data item mapping
     
@@ -166,8 +212,8 @@ class Orb:
         """
         Categorizes files into corresponding data items for each sample.
         """
+        logger.info("Categorizing files...")
         # load files 
-        #self._file_paths = defaultdict(dict)
         for file_path in self._list_files(self.results_folder):
             # get file info 
             ## basename
@@ -268,6 +314,21 @@ class Orb:
         # merge with metadata
         return pd.merge(DF, self.metadata, on='Sample', how='left')
 
+    def _get_shard_data(self, attr_name: str) -> pd.DataFrame:
+        """Dynamically generate a DataFrame for the given attribute from shards."""
+        attr = getattr(self, attr_name)
+        if attr is None:
+            # Create DataFrame if it doesn't exist
+            DF = []
+            for shard in self.shatter():
+                shard_data = getattr(shard, attr_name, None)
+                if shard_data is not None:
+                    DF += shard_data
+            attr = pd.DataFrame(DF)
+            # Cache the result
+            setattr(self, attr_name, attr)  
+        return attr
+
     def __str__(self) -> str:
         """
         Prints sample : data_item_name : file_path for all shards.
@@ -285,3 +346,32 @@ class Orb:
             for filename in filenames:
                 files.append(os.path.join(dirpath, filename))
         return files
+
+    # properties
+    @property
+    def num_shards(self):
+        return len(self._shards)
+
+    @property
+    def shards(self):
+        yield from self._shards.values()
+
+    @property
+    def rise_time_data(self):
+        return self._get_shard_data('_rise_time_data')
+
+    @property
+    def fwhm_data(self):
+        return self._get_shard_data('_fwhm_data')
+
+    @property
+    def frpm_data(self):
+        return self._get_shard_data('_frpm_data')
+
+    @property
+    def mask_metrics_data(self):
+        return self._get_shard_data('_mask_metrics_data')
+    
+    @property
+    def silhouette_scores_data(self):
+        return self._get_shard_data('_silhouette_scores_data')

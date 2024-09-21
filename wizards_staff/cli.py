@@ -2,10 +2,6 @@
 import os
 import sys
 import argparse
-import logging
-
-# logging
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.DEBUG)
 
 # argparse
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -33,6 +29,8 @@ def parse_args():
                         help='Set to True to save the output files')    
     parser.add_argument('--output-dir', type=str, default='lizard_wizard_outputs',
                         help='Directory to save the output files')
+    parser.add_argument('--threads', type=int, default=2,
+                        help='Number of parallel processes')
     return parser.parse_args()
 
 ## main interface function
@@ -49,7 +47,8 @@ def main():
         size_threshold=args.size_threshold,
         show_plots=args.show_plots,
         save_files=args.save_files,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        threads=args.threads
     )
 
     # write out data tables

@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
 from matplotlib import colors
 
+# logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Functions
 def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np.ndarray, 
@@ -85,7 +88,7 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
         
         # Return None if no clusters are found
         if best_labels is None:
-            logging.warning('No clusters found. No overlay image will be generated.')
+            logger.warning('No clusters found. No overlay image will be generated.')
             return None
 
         # Assign colors to clusters
@@ -215,7 +218,7 @@ def plot_kmeans_heatmap(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_na
 
     # If just one cluster is found, return None
     if best_sorted_data_t is None:
-        logging.warning('Only one cluster found. No kmeans heatmap plot will be generated.')
+        logger.warning('Only one cluster found. No kmeans heatmap plot will be generated.')
         return None, None
 
     # Plotting the best result
