@@ -43,3 +43,6 @@ glob2 = ["glob2"]
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+wizards-staff = "wizards_staff.cli:main"

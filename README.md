@@ -1,4 +1,5 @@
-# Wizards-Staff
+Wizards-Staff
+=============
 
 Calcium imaging analysis pipeline for processing Lizard-Wizard outputs and performing metrics analysis, clustering, and more. This package was developed for the Arc Institute.
 
@@ -28,18 +29,19 @@ cd Wizards-Staff
 
 ### Create a Virtual Environmetn (Optional but Recommended)
 
-Its recommended to create a virtual environment for Wizards-Staff as this ensures that your project dependencies are isolated. You can use conda to create one:
+Its recommended to create a virtual environment for Wizards-Staff as this ensures that your project dependencies are isolated. 
+You can use mamba (or mamba) to create one:
 
-```console
-conda create -n wizards_staff python=3.11 -y
-conda activate wizards_staff
+```bash
+mamba create -n wizards_staff python=3.11 -y
+mamba activate wizards_staff
 ```
 
 ### Install the Package
 
 To install the wizards_staff package within your virtual environment, from the command line run:
 
-```console
+```bash
 pip install .
 ```
 
