@@ -15,7 +15,7 @@ from wizards_staff.wizards.spellbook import calc_rise_tm, calc_fwhm_spikes, calc
 from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, plot_spatial_activity_map, plot_dff_activity
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
-from wizards_staff.wizards.familiars import spatial_filtering  # categorize_files, load_required_files, 
+from wizards_staff.wizards.familiars import spatial_filtering
 from wizards_staff.wizards.orb import Orb, Shard
 
 # logging
@@ -28,7 +28,8 @@ def run_all(results_folder: str, metadata_path: str, frate: int, zscore_threshol
             max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
             poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
             save_files: bool=True, output_dir: str='wizard_staff_outputs', 
-            threads: int=2) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            threads: int=2, debug: bool=False
+            ) -> Orb:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
     
@@ -51,35 +52,10 @@ def run_all(results_folder: str, metadata_path: str, frate: int, zscore_threshol
         threads (int): Number of threads to use for processing. 
         
     Returns:
-        rise_time_df (pd.DataFrame): DataFrame containing rise time metrics.
-            - rise_tm: dict where keys are neuron indices and values are lists of rise times for each neuron.
-            - rise_tm_pos: dict where keys are neuron indices and values are lists of time points corresponding to end of rise times
-        fwhm_df (pd.DataFrame): DataFrame containing FWHM metrics.
-            - fwhm_pos_back: dict keys are neuron indices and values are lists of backward positions of FWHM
-            - fwhm_pos_fwd: dict keys are neuron indices and values are lists of forward positions of FWHM
-            - fwhm: dict keys are neuron indices and values are lists of FWHM
-            - spike_counts: dictionary where keys are neuron indices and values are lists of the number of spikes within the FWHM for each neuron.
-        frpm_df (pd.DataFrame): DataFrame containing FRPM metrics.
-            - frpm: dict keys are neuron indices and values are lists of average frpm for each neuron
-            - frpm_avg: float value of average frpm for the dataset
-        mask_metrics_df (pd.DataFrame): DataFrame containing mask metrics.
-            - file: The filename of the processed file.
-            - roundness: The roundness of the masked object.
-            - diameter: The diameter of the masked object.
-            - area: The area of the masked object.
-        silhouette_scores_df (pd.DataFrame): DataFrame containing silhouette scores for K-means clustering.
+        orb (Orb): Orb object containing the data
     """
     # Load data from the results folder
     orb = Orb(results_folder, metadata_path)
-
-    # for shard in orb.shatter():
-    #     shard._mask_metrics_data.append({
-    #         'Sample': "test",
-    #         'Roundness': 0.1
-    #     })
-    #     print(shard.mask_metrics_data)
-    # print(orb.mask_metrics_data)
-    # exit();
 
     # Check if the output directory exists
     if save_files:
@@ -105,7 +81,7 @@ def run_all(results_folder: str, metadata_path: str, frate: int, zscore_threshol
         save_files=save_files,
         output_dir=output_dir
     )
-    if threads == 1:
+    if debug or threads == 1:
         for shard in orb.shatter():
             func(shard)
     else:
@@ -126,64 +102,58 @@ def run_all(results_folder: str, metadata_path: str, frate: int, zscore_threshol
             # Re-enable logging
             logging.disable(logging.NOTSET)
 
-    # Convert the lists to DataFrames
-    # print(orb.rise_time_data)
-    # print(orb.fwhm_data)
-    # print(orb.frpm_data)
-    # print(orb.mask_metrics_data)
-    # print(orb.silhouette_scores_data)
-    # exit();
-    
-    # Use explode to handle lists in DataFrames
-    rise_time_df = rise_time_df.explode(['Rise Times', 'Rise Positions'])
-    fwhm_df = fwhm_df.explode(['FWHM Backward Positions', 'FWHM Forward Positions', 'FWHM Values', 'Spike Counts'])
-    
-    # Append metadata to dataframes
-    updated_dfs = append_metadata_to_dfs(
-        metadata_path,
-        rise_time = rise_time_df,
-        frpm = frpm_df, 
-        fwhm = fwhm_df, 
-        mask_metrics = mask_metrics_df, 
-        sil_scores = silhouette_scores_df
-    )
-    
     # Save DataFrames as CSV files if required
     if save_files:
-        # # Expand the user directory if it exists in the output_dir path
-        # output_dir = os.path.expanduser(output_dir)
-        
-        # # Create the output directory if it does not exist
-        # os.makedirs(output_dir, exist_ok=True)
-
-        # Get the base name of the results folder
-        fname = os.path.splitext(os.path.basename(results_folder))[0]
-
-        # Define the file paths
-        rise_time_path = os.path.join(output_dir, f'{fname}_rise_time_df.csv')
-        fwhm_path = os.path.join(output_dir, f'{fname}_fwhm_df.csv')
-        frpm_path = os.path.join(output_dir, f'{fname}_frpm_df.csv')
-        mask_metrics_path = os.path.join(output_dir, f'{fname}_mask_metrics_df.csv')
-        silhouette_scores_path = os.path.join(output_dir, f'{fname}_silhouette_scores_df.csv')
-
-        # Save each DataFrame to a CSV file
-        updated_dfs['rise_time'].to_csv(rise_time_path, index=False)
-        updated_dfs['frpm'].to_csv(frpm_path, index=False)
-        updated_dfs['fwhm'].to_csv(fwhm_path, index=False)
-        updated_dfs['mask_metrics'].to_csv(mask_metrics_path, index=False)
-        updated_dfs['sil_scores'].to_csv(silhouette_scores_path, index=False)
-
-        print(f'Data saved to {output_dir}')
+        orb.save_data(output_dir)
     
     # Run PWC analysis if group_name is provided
-    if group_name:
-        df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra = run_pwc(
-            group_name, metadata_path, results_folder, poly = poly,
-            show_plots = show_plots, save_files = save_files, output_dir = output_dir
-        )
-        return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
+    # if group_name:
+    #     orb.run_pwc(
+    #         group_name, metadata_path, results_folder, 
+    #         poly = poly,
+    #         show_plots = show_plots, 
+    #         save_files = save_files, 
+    #         output_dir = output_dir
+    #     )
 
-    return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df
+    return orb
+
+    # # Save DataFrames as CSV files if required
+    # if save_files:
+    #     # # Expand the user directory if it exists in the output_dir path
+    #     # output_dir = os.path.expanduser(output_dir)
+        
+    #     # # Create the output directory if it does not exist
+    #     # os.makedirs(output_dir, exist_ok=True)
+
+    #     # Get the base name of the results folder
+    #     fname = os.path.splitext(os.path.basename(results_folder))[0]
+
+    #     # Define the file paths
+    #     rise_time_path = os.path.join(output_dir, f'{fname}_rise_time_df.csv')
+    #     fwhm_path = os.path.join(output_dir, f'{fname}_fwhm_df.csv')
+    #     frpm_path = os.path.join(output_dir, f'{fname}_frpm_df.csv')
+    #     mask_metrics_path = os.path.join(output_dir, f'{fname}_mask_metrics_df.csv')
+    #     silhouette_scores_path = os.path.join(output_dir, f'{fname}_silhouette_scores_df.csv')
+
+    #     # Save each DataFrame to a CSV file
+    #     updated_dfs['rise_time'].to_csv(rise_time_path, index=False)
+    #     updated_dfs['frpm'].to_csv(frpm_path, index=False)
+    #     updated_dfs['fwhm'].to_csv(fwhm_path, index=False)
+    #     updated_dfs['mask_metrics'].to_csv(mask_metrics_path, index=False)
+    #     updated_dfs['sil_scores'].to_csv(silhouette_scores_path, index=False)
+
+    #     print(f'Data saved to {output_dir}')
+    
+    # # Run PWC analysis if group_name is provided
+    # if group_name:
+    #     df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra = run_pwc(
+    #         group_name, metadata_path, results_folder, poly = poly,
+    #         show_plots = show_plots, save_files = save_files, output_dir = output_dir
+    #     )
+    #     return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df, df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
+
+    # return rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df
 
 
 def _run_all(shard: Shard, frate, zscore_threshold: int, percentage_threshold: float, 

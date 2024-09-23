@@ -31,6 +31,8 @@ def parse_args():
                         help='Directory to save the output files')
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of parallel processes')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Debug mode')
     return parser.parse_args()
 
 ## main interface function
@@ -48,7 +50,8 @@ def main():
         show_plots=args.show_plots,
         save_files=args.save_files,
         output_dir=args.output_dir,
-        threads=args.threads
+        threads=args.threads,
+        debug=args.debug
     )
 
     # write out data tables

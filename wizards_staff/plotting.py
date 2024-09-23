@@ -4,7 +4,7 @@ import os
 import random
 import logging
 import warnings
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
 from matplotlib import colors
 
-# logging
+# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
                               max_clusters: int=10, random_seed: int=1111111,
                               show_plots: bool=True, save_files: bool=False,
                               clustering: bool=False, dff_dat: np.ndarray=None,
-                              output_dir: str='wizard_staff_outputs') -> np.ndarray:
+                              output_dir: str='wizard_staff_outputs') -> Optional[np.ndarray]:
     """
     Plot the activity of neurons by overlaying the spatial footprints on a single image.
     
@@ -62,6 +62,10 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
     if clustering and dff_dat is not None:
         # Perform clustering on the filtered data
         data_t = dff_dat[cnm_idx]
+
+        # If empty, return None  # TODO: check with Jesse about this
+        if data_t.shape[0] == 0:
+            return None
 
         best_silhouette_score = -1
         best_num_clusters = 2
@@ -165,7 +169,7 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
 def plot_kmeans_heatmap(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_name: str, 
                         output_dir: str='wizard_staff_outputs', min_clusters: int=2, 
                         max_clusters: int=10, random_seed: int=1111111, show_plots: bool=True, 
-                        save_files: bool=True) -> Tuple[float, int]:
+                        save_files: bool=True) -> Tuple[Optional[float], Optional[int]]:
     """
     Plot K-means clustering of the given data and outputs synchronization metrics and clustering information to a spreadsheet.
 
@@ -186,6 +190,10 @@ def plot_kmeans_heatmap(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_na
     """
     # Filter the data
     data_t = dff_dat[filtered_idx]
+
+    # If empty, return None  # TODO: check with Jesse about this
+    if data_t.shape[0] == 0:
+        return None, None
 
     # Init params
     best_silhouette_score = -1
@@ -326,6 +334,10 @@ def plot_cluster_activity(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_
     """
     # Filter the data
     data_t = dff_dat[filtered_idx]
+
+    # If empty, return None  # TODO: check with Jesse about this
+    if data_t.shape[0] == 0:
+        return None
 
     # Perform K-means clustering
     best_silhouette_score = -1
