@@ -1,5 +1,8 @@
-Wizards-Staff
+Wizards Staff
 =============
+
+<img src="./img/wizards_staff.png" alt="drawing" width="400"/>
+
 
 Calcium imaging analysis pipeline for processing Lizard-Wizard outputs and performing metrics analysis, clustering, and more. 
 This package was developed for the Arc Institute.
