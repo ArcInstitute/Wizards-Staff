@@ -17,101 +17,7 @@ from wizards_staff.plotting import plot_montage
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# def list_files(indir):
-#     files = []
-#     for dirpath, dirnames, filenames in os.walk(indir):
-#         for filename in filenames:
-#             files.append(os.path.join(dirpath, filename))
-#     return files
-
-# def categorize_files(results_folder, metadata_path):
-#     """
-#     Categorizes files in the results folder based on their prefixes and extensions.
-    
-#     Args:
-#         results_folder (str): Path to the folder containing result files.
-        
-#     Returns:
-#         dict: Dictionary where keys are raw filenames and values are lists of categorized file paths.
-#     """
-#     # Define prefixes and extensions to filter
-#     filters = [
-#         ('cn_filter', '.npy'),
-#         ('cn_filter', '.tif'),
-#         ('cnm_A', '.npy'),
-#         ('cnm_C', '.npy'),
-#         ('cnm_S', '.npy'),
-#         ('cnm_idx', '.npy'),
-#         ('corr_pnr_histograms', '.tif'),
-#         ('df_f0_graph', '.tif'),
-#         ('dff_f_mean', '.npy'),
-#         ('f_mean', '.npy'),
-#         ('pnr_filter', '.npy'),
-#         ('pnr_filter', '.tif'),
-#         ('minprojection', '.tif'),
-#         ('mask', '.tif'),
-#     ]
-
-#     # Filter files and populate the dictionary
-#     categorized_files = defaultdict(dict)
-#     for file in list_files(results_folder):
-#         for prefix, extension in filters:
-#             if not file.endswith(prefix + extension):
-#                 continue
-#             basename = os.path.splitext(os.path.basename(file))[0]
-#             categorized_files[basename][prefix] = file
-
-#     # Ensure that each entry has a mask, set to None if not present
-#     for base_filename, prefix in categorized_files.items():
-#         if categorized_files[base_filename].get('mask') is None:
-#             categorized_files[base_filename]['mask'] = [None]
-
-#     return categorized_files
-    
-
-# def load_required_files(raw_filename, cat_files):
-#     """
-#     Loads necessary files for a given raw filename from the categorized_files dictionary.
-    
-#     Args:
-#         raw_filename (str): Raw filename to load files for.
-#         cat_files (dict): Dictionary mapping filenames to their corresponding file paths.    
-#     Returns:
-#         dict: Dictionary containing loaded files with keys corresponding to the file type.
-#     """
-#     data = dict()
-#     for prefix in cat_files.keys():
-#         try:
-#             if prefix in ('cn_filter', 'cnm_A', 'cnm_C', 'cnm_idx', 'dff_dat', 'pnr_filter'):
-#                 data[prefix] = np.load(cat_files[prefix], allow_pickle=True)
-#             elif prefix in ('pnr_hist', 'df_f0_graph'):
-#                 data[prefix] = imread(cat_files[prefix])
-#             elif prefix in ('im_min', 'mask'):
-#                 data[prefix] = imread(cat_files[prefix]) if cat_files[prefix] is not None else None
-#         except Exception as e:
-#             print(f"Error loading {prefix} for {raw_filename}: {e}")
-#             exit(1)
-#     return data
-
-#     # res = {
-#     #         'cn_filter': np_load(cat_files, 'cn_filter', allow_pickle=True),
-#     #         'cn_filter_img': np_load(cat_files, 'cn_filter_img'),
-#     #         'cnm_A': np_load(cat_files, 'cnm_A', allow_pickle=True),
-#     #         'cnm_C': np_load(cat_files, 'cnm_C', allow_pickle=True),
-#     #         'cnm_S': np_load(cat_files, 'cnm_S', allow_pickle=True),
-#     #         'cnm_idx': np_load(cat_files, 'cnm_idx', allow_pickle=True),
-#     #         'pnr_hist': imread(cat_files['pnr_hist']),
-#     #         'df_f0_graph': imread(cat_files['df_f0_graph']),
-#     #         'dff_dat': np_load(cat_files, 'dff_dat', allow_pickle=True),
-#     #         'dat': np_load(cat_files, 'dat', allow_pickle=True),
-#     #         'pnr_filter': np_load(cat_files, 'pnr_filter', allow_pickle=True),
-#     #         #'im_min': categorized_files[raw_filename][11] if 12 not in categorized_files[raw_filename] else categorized_files[raw_filename][12],
-#     #         #'mask': imread(categorized_files[raw_filename][13]) if 13 in categorized_files[raw_filename] else None
-#     # }
-#     # #except Exception as e:
-#     # #    print(f"Error loading files for {raw_filename}: {e}")
-#     # #    return None
-    
+# functions    
 def load_and_filter_files(categorized_files: dict, p_th: int=75, size_threshold: int=20000
                           ) -> Tuple[dict, dict]:
     """
@@ -136,7 +42,7 @@ def load_and_filter_files(categorized_files: dict, p_th: int=75, size_threshold:
             continue
         
         # Load dF/F0 data
-        d_dff[raw_filename] = file_data['dff_f_mean']
+        d_dff[raw_filename] = file_data['dff_f_mean']  # dff_dat
 
         filtered_idx = spatial_filtering(
             cn_filter= file_data['cn_filter_img'], p_th=p_th, size_threshold=size_threshold, 
@@ -163,7 +69,7 @@ def spatial_filtering(p_th: float, size_threshold: int, cnm_A: np.ndarray, cnm_i
     Returns:
         filtered_idx (list): List of indices of the filtered components.
     """
-    logger.info('Applying spatial filtering to components...')
+    #print('Applying spatial filtering to components...', file=sys.stderr)
 
     # Load the mask image and get its shape
     if plot:

@@ -20,99 +20,122 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # functions
-def run_pwc(orb: "Orb", group_name: str, poly: bool=False, 
-            pdeg: int=4, lw: float=1, lwp: float=0.5, psz: float=2, show_plots: bool=False, 
-            save_files: bool=False, output_dir: str='wizard_staff_outputs'
+def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75, 
+            size_threshold: int=20000, pdeg: int=4, lw: float=1, lwp: float=0.5, 
+            psz: float=2, show_plots: bool=False, save_files: bool=False, 
+            output_dir: str='wizard_staff_outputs'
             ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Processes data, computes metrics, generates plots, and stores them in DataFrames.
 
     Args:
-        group_name: Column name to group metadata by.
-        metadata_path: Path to the metadata CSV file.
+        orb: Orb object containing the data.
         results_folder: Path to the results folder.
-        poly: Flag to control whether polynomial fitting is applied. Default is False.
-        pdeg: Degree for polynomial fitting. Default is 4.
-        lw: Line width for plots. Default is 1.
-        lwp: Line width for points. Default is 0.5.
-        psz: Point size for plots. Default is 2.
-        show_plots: Flag to control whether plots are displayed. Default is False.
-        save_files: Flag to control whether plots and dataframes are saved to files. Default is False.
-        output_dir: Directory where output files will be saved. Default is 'wizard_staff_outputs'.
+        poly: Flag to control whether polynomial fitting is applied.
+        p_th: Threshold for spatial filtering. 
+        size_threshold: Threshold for the minimum size of the connected components.
+        pdeg: Degree for polynomial fitting.
+        lw: Line width for plots.
+        lwp: Line width for points.
+        psz: Point size for plots.
+        show_plots: Flag to control whether plots are displayed.
+        save_files: Flag to control whether plots and dataframes are saved to files.
+        output_dir: Directory where output files will be saved.
 
     Returns:
         df_mn_pwc: DataFrame containing overall pairwise correlation metrics.
         df_mn_pwc_inter: DataFrame containing inter-group pairwise correlation metrics.
         df_mn_pwc_intra: DataFrame containing intra-group pairwise correlation metrics.
-    """
-    #print(orb); exit();
-
-    # Load and preprocess the metadata
-    #metadata_df = load_and_process_metadata(metadata_path)
+    """  
+    #-- NOTES --#
+    # d_dff is a dictionary of dff_dat
+    # d_nspIDs is a dictionary where its the filtered indices
 
     # Group the metadata by the specified column
-    d_k_in_groups = orb.metadata.groupby(group_name)['Filename'].apply(list).to_dict()
+    if group_name not in orb.metadata.columns:
+        raise ValueError(f'Column "{group_name}" is not a metadata column.')
+    d_k_in_groups = orb.metadata.groupby(group_name)['Sample'].apply(list).to_dict()
 
-    # Load and filter data for each file
-    #categorized_files = categorize_files(results_folder)
+    # Iterate over each shard
+    for shard in orb.shatter():
+        # Status
+        orb._logger.info(f'Processing {shard.sample_name}...')
 
-    # Load and filter necessary files
-    #d_dff, d_nspIDs = load_and_filter_files(categorized_files)
+        # Conduct spatial filtering
+        filtered_idx = spatial_filtering(
+            p_th=p_th, 
+            size_threshold=size_threshold, 
+            cnm_A=shard.get('cnm_A', req=True), 
+            cnm_idx=shard.get('cnm_idx', req=True),
+            im_min=shard.get('minprojection', req=True),
+            plot=False, 
+            silence=True
+        )
 
+        # Filter group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
+        filtered_d_k_in_groups = filter_group_keys(
+            d_k_in_groups, shard.get('dff_dat', req=True), filtered_idx
+        )
 
-    # Initialize dictionaries to store pairwise correlation means
-    filtered_d_k_in_groups = filter_group_keys(d_k_in_groups, d_dff, d_nspIDs)
+        # Calculate pairwise correlation means for groups
+        d_mn_pwc, d_mn_pwc_inter, d_mn_pwc_intra = calc_pwc_mn(
+            filtered_d_k_in_groups, 
+            shard.get('dff_dat', req=True), 
+            filtered_idx, 
+            dff_cut=0.0, 
+            norm_corr=False
+        )
 
-    d_mn_pwc, d_mn_pwc_inter, d_mn_pwc_intra = calc_pwc_mn(filtered_d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.0, norm_corr=False)
+        # Convert dictionaries to DataFrames
+        df_mn_pwc = pd.DataFrame.from_dict(d_mn_pwc, orient='index').transpose()
+        df_mn_pwc_inter = pd.DataFrame.from_dict(d_mn_pwc_inter, orient='index').transpose()
+        df_mn_pwc_intra = pd.DataFrame.from_dict(d_mn_pwc_intra, orient='index').transpose()
 
-    # Convert dictionaries to DataFrames
-    df_mn_pwc = pd.DataFrame.from_dict(d_mn_pwc, orient='index').transpose()
-    df_mn_pwc_inter = pd.DataFrame.from_dict(d_mn_pwc_inter, orient='index').transpose()
-    df_mn_pwc_intra = pd.DataFrame.from_dict(d_mn_pwc_intra, orient='index').transpose()
+        # Plotting and saving figures
+        ## Plot and save the mean pairwise correlation for each group
+        d_title = {
+            'PWC' : df_mn_pwc,
+            'Inter_Group_Mean_PWC' : df_mn_pwc_inter,
+            'Intra_Group_Mean_PWC' : df_mn_pwc_intra 
+        }
+        for title, data in d_title.items():
+            plot_pwc_means(
+                data,
+                title = title,
+                xlabel = 'Groups', 
+                ylabel = 'Mean Pairwise Correlation', 
+                poly = poly, 
+                lwp = lwp, 
+                psz = psz, 
+                pdeg = 4,
+                show_plots = show_plots, 
+                save_files = save_files, 
+                fname = shard.sample_name + '_' + title.replace('_', '-'),
+                output_dir = output_dir
+            )
 
-    # Pull the filename from the results folder name
-    fname = os.path.splitext(os.path.basename(results_folder))[0]
+        # Save DataFrames if required
+        if save_files:
+            # Expand the user directory if it exists in the output_dir path
+            output_dir = os.path.expanduser(output_dir)
+        
+            # Create the output directory if it does not exist
+            os.makedirs(output_dir, exist_ok=True)
+        
+            # Define the file paths
+            df_mn_pwc_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc.csv')
+            df_mn_pwc_inter_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc-intra.csv')
+            df_mn_pwc_intra_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc-inter.csv')
 
-    # Plotting and saving figures
-    plot_pwc_means(
-        d_mn_pwc_inter, title = 'Inter_Group_Mean_PWC', xlabel = 'Groups', 
-        ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
-        show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
-    )
+            # Save each DataFrame to a CSV file
+            df_mn_pwc.to_csv(df_mn_pwc_path, index=False)
+            df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
+            df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
 
-    plot_pwc_means(
-        d_mn_pwc_intra, title = 'Intra_Group_Mean_PWC', xlabel = 'Groups',
-         ylabel = 'Mean Pairwise Correlation', poly = poly, lwp = lwp, psz = psz, pdeg = 4,
-        show_plots = show_plots, save_files = save_files, fname = fname, output_dir = output_dir
-    )
-
-    plot_pwc_means(
-        d_mn_pwc, title = 'PWC', xlabel = 'Groups', ylabel = 'Mean Pairwise Correlation', 
-        poly = poly, lwp = lwp, psz = psz, pdeg = 4, show_plots=show_plots, 
-        save_files = save_files, fname = fname, output_dir = output_dir
-    )
-
-    # Save DataFrames if required
     if save_files:
-        # Expand the user directory if it exists in the output_dir path
-        output_dir = os.path.expanduser(output_dir)
-        
-        # Create the output directory if it does not exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Define the file paths
-        df_mn_pwc = os.path.join(output_dir, f'{fname}_df_mn_pwc.csv')
-        df_mn_pwc_inter_path = os.path.join(output_dir, f'{fname}_df_mn_pwc_intra.csv')
-        df_mn_pwc_intra_path = os.path.join(output_dir, f'{fname}_df_mn_pwc_inter.csv')
+        orb._logger.info(f'DataFrames saved to {output_dir}')
 
-        # Save each DataFrame to a CSV file
-        df_mn_pwc.to_csv(df_mn_pwc, index=False)
-        df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
-        df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
-
-        print(f'DataFrames saved to {output_dir}')
-
-    return df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
+    #return df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
 
 def calc_pwc_mn(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict, dff_cut: float=0.1, 
                 norm_corr: bool=False) -> Tuple[dict, dict, dict]:
@@ -370,10 +393,8 @@ def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlab
     if save_files==True:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
-
         # Create the output directory if it does not exist
         os.makedirs(output_dir, exist_ok=True)
-        
         # Save the figure
         plt.savefig(f'{output_dir}{fname}_{title}.png', bbox_inches='tight')
         

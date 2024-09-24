@@ -146,6 +146,11 @@ class Orb:
                 print(msg, file=sys.stderr)
     
     def _load_metadata(self, metadata_file_path: str):
+        """
+        Loads metadata from a CSV file.
+        Args:
+            metadata_file_path: Path to the metadata CSV file.
+        """
         # status
         self._logger.info(f"Loading metadata from: {metadata_file_path}")
         # check if metadata file exists
@@ -164,6 +169,10 @@ class Orb:
     def list_data_items(self, sample: str) -> List[str]:
         """
         Lists all data items for a given sample.
+        Args:
+            sample: Sample name.
+        Returns:
+            List of data items.
         """
         shard = self._shards.get(sample)
         if shard:
@@ -325,7 +334,7 @@ class Orb:
             **kwargs: Keyword arguments to pass to `run_pwc
         """
         # run PWC on each sample
-        run_pwd(self, **kwargs)
+        run_pwc(self, **kwargs)
 
     def save(self, outfile: str) -> None:
         """
