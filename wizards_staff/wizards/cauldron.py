@@ -75,13 +75,14 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
         save_files=save_files,
         output_dir=output_dir
     )
+    desc = 'Shattering the orb and processing each shard...'
     if debug or threads == 1:
+        self._logger.info(desc)
         for shard in orb.shatter():
             func(shard)
     else:
         with ProcessPoolExecutor() as executor:
             logging.disable(logging.INFO)
-            desc = 'Processing shards of the Wizard Orb'
             # Submit the function to the executor for each shard
             futures = {executor.submit(func, shard) for shard in orb.shatter()}
             # Use as_completed to get the results as they are completed
@@ -98,7 +99,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
 
     # Save DataFrames as CSV files if required
     if save_files:
-        orb.save_data(output_dir)
+        orb.save_results(output_dir)
     
     # Run PWC analysis if group_name is provided
     if group_name:
@@ -261,7 +262,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         random_seed = random_seed,
         show_plots = show_plots, 
         save_files = save_files,
-        dff_dat = shard.get('dff_dat')
+        dff_dat = shard.get('dff_dat'),
+        output_dir = output_dir
     )
     
     # Plot spatial activity map with clustering
@@ -276,7 +278,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         clustering = True, 
         dff_dat = shard.get('dff_dat', req=True), 
         show_plots = show_plots, 
-        save_files = save_files
+        save_files = save_files,
+        output_dir = output_dir
     )
 
     return shard

@@ -214,16 +214,15 @@ class Orb:
         return attr
 
     #-- save data --#
-    def save_data(self, outdir: str, data_items: 
+    def save_results(self, outdir: str, result_names: 
                   list=["rise_time_data", "fwhm_data", "frpm_data", 
-                        "mask_metrics_data", "silhouette_scores_data"]):
+                        "mask_metrics_data", "silhouette_scores_data",
+                        "df_mn_pwc", "df_mn_pwc_intra", "df_mn_pwc_inter"]):
         """
         Saves data items to disk.
         Args:
             outdir: Output directory.
-            data_items: List of data items to save.
-        Returns:
-            List of saved file paths.
+            result_names: List of results to save.
         """
         self._logger.info(f"Saving data items to: {outdir}")
         # output directory
@@ -231,16 +230,16 @@ class Orb:
             os.makedirs(outdir, exist_ok=True)
         # save each data item
         outfiles = []
-        for data_item_name in data_items:
+        for name in result_names:
             # get property
-            data = getattr(self, data_item_name)
+            data = getattr(self, name)
             if data is None:
-                self._logger.warning(f"Data item '{data_item_name}' not found")
+                self._logger.warning(f"Data item '{name}' not found")
                 continue
             # write to disk
-            outfile = os.path.join(outdir, data_item_name.replace("_", "-") + ".csv")
+            outfile = os.path.join(outdir, name.replace("_", "-") + ".csv")
             data.to_csv(outfile, index=False)
-            self._logger.info(f"'{data_item_name}' saved to: {outfile}")
+            self._logger.info(f"  '{name}' saved to: {outfile}")
             outfiles.append(outfile)
 
     #-- data processing --#
@@ -337,7 +336,7 @@ class Orb:
         """
         Return all results
         """
-        return {
+        yield from {
             'rise_time_data': self.rise_time_data,
             'fwhm_data': self.fwhm_data,
             'frpm_data': self.frpm_data,
@@ -346,7 +345,7 @@ class Orb:
             'df_mn_pwc': self.df_mn_pwc,
             'df_mn_pwc_intra': self.df_mn_pwc_intra,
             'df_mn_pwc_inter': self.df_mn_pwc_inter
-        }
+        }.items()
 
     @property
     def rise_time_data(self) -> pd.DataFrame:

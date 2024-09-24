@@ -24,8 +24,7 @@ logger = logging.getLogger(__name__)
 def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75, 
             size_threshold: int=20000, pdeg: int=4, lw: float=1, lwp: float=0.5, 
             psz: float=2, show_plots: bool=False, save_files: bool=False, 
-            output_dir: str='wizard_staff_outputs'
-            ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            output_dir: str='wizard_staff_outputs') -> None:
     """
     Processes data, computes metrics, generates plots, and stores them in DataFrames.
 
@@ -43,7 +42,7 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
         save_files: Flag to control whether plots and dataframes are saved to files.
         output_dir: Directory where output files will be saved.
 
-    Returns:
+    Creates:
         df_mn_pwc: DataFrame containing overall pairwise correlation metrics.
         df_mn_pwc_inter: DataFrame containing inter-group pairwise correlation metrics.
         df_mn_pwc_intra: DataFrame containing intra-group pairwise correlation metrics.
@@ -139,6 +138,8 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     orb._df_mn_pwc = df_mn_pwc
     orb._df_mn_pwc_inter = df_mn_pwc_inter
     orb._df_mn_pwc_intra = df_mn_pwc_intra
+
+    print(orb._df_mn_pwc);
 
     # status
     orb._logger.info('Pairwise correlation analysis completed.')
