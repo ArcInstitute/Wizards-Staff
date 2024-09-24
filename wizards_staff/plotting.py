@@ -153,7 +153,7 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
         if clustering and dff_dat is not None:
             overlay_image_path = os.path.join(output_dir_pngs, f'{sample_name}_clustered-activity-overlay.png')
         else:
-            overlay_image_path = os.path.join(output_dir_pngs, f'{sample_Name}_activity-overlay.png')
+            overlay_image_path = os.path.join(output_dir_pngs, f'{sample_name}_activity-overlay.png')
         
         # Create a new figure for saving
         plt.figure(figsize=(10, 10))
