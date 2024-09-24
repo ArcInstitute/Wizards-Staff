@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+import pickle
 from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
 from functools import partial
@@ -233,10 +234,10 @@ class Orb:
     #-- data processing --#
     def run_all(self, frate: int=30, zscore_threshold: int=3, 
                 percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
-            max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
-            poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
-            save_files: bool=True, output_dir: str='wizard_staff_outputs', 
-            threads: int=2, debug: bool=False) -> None:
+                max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
+                poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
+                save_files: bool=True, output_dir: str='wizard_staff_outputs', 
+                threads: int=2, debug: bool=False) -> None:
         """
         Process the results folder, computes metrics, and stores them in DataFrames.
     
@@ -287,7 +288,7 @@ class Orb:
                 func(shard)
         else:
             with ProcessPoolExecutor() as executor:
-                self._logger.disable(logging.INFO)
+                logging.disable(logging.INFO)
                 desc = 'Processing shards of the Wizard Orb'
                 # Submit the function to the executor for each shard
                 futures = {executor.submit(func, shard) for shard in self.shatter()}
@@ -301,7 +302,7 @@ class Orb:
                         # Handle any exception that occurred during the execution
                         print(f'Exception occurred: {e}')
                 # Re-enable logging
-                self._logger.disable(logging.NOTSET)
+                logging.disable(logging.NOTSET)
     
         # Save DataFrames as CSV files if required
         if save_files:
@@ -326,6 +327,19 @@ class Orb:
         # run PWC on each sample
         run_pwd(self, **kwargs)
 
+    def save(self, outfile: str) -> None:
+        """
+        Saves the Orb object to disk.
+        Args:
+            outfile: Output file path.
+        """
+        outdir = os.path.dirname(outfile)
+        if outdir != "" and not os.path.exists(outdir):
+            os.makedirs(outdir, exist_ok=True)
+        # save object
+        with open(outfile, 'wb') as f:
+            pickle.dump(self, f)
+        self._logger.info(f"Orb saved to: {outfile}")
 
     #-- misc --#
     def __str__(self) -> str:
