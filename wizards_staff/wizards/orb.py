@@ -17,10 +17,6 @@ from wizards_staff.pwc import run_pwc
 from wizards_staff.wizards.shard import Shard
 from wizards_staff.wizards.cauldron import _run_all
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 # Functions
 def npy_loader(infile, allow_pickle=True):
     return np.load(infile, allow_pickle=allow_pickle)
@@ -74,6 +70,7 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
+    _logger: logging.Logger = field(default=None, init=False)
     _rise_time_data: pd.DataFrame = field(default=None, init=False)
     _fwhm_data: pd.DataFrame = field(default=None, init=False)
     _frpm_data: pd.DataFrame = field(default=None, init=False)
@@ -86,6 +83,9 @@ class Orb:
     _samples: set = field(default=None, init=False)  # samples
     
     def __post_init__(self):
+        # Configure logging
+        logging.basicConfig(level=logging.INFO, format='%(message)s', force=True)
+        self._logger = logging.getLogger(__name__)
         # load metadata
         self._load_metadata(self.metadata_file_path)
         self._samples = set(self.metadata['Sample'])
@@ -96,7 +96,7 @@ class Orb:
         """
         Categorizes files into corresponding data items for each sample.
         """
-        logger.info("Categorizing files...")
+        self._logger.info("Categorizing files...")
         # load files 
         for file_path in self._list_files(self.results_folder):
             # get file info 
@@ -166,7 +166,7 @@ class Orb:
         if shard:
             return list(shard.get_data_items())
         else:
-            logger.warning(f"Sample '{sample}' not found")
+            self._logger.warning(f"Sample '{sample}' not found")
             return []
 
     def shatter(self) -> Generator[Shard, None, None]:
@@ -210,7 +210,7 @@ class Orb:
         Returns:
             List of saved file paths.
         """
-        logging.info(f"Saving data items to: {outdir}")
+        self._logger.info(f"Saving data items to: {outdir}")
         # output directory
         if outdir != "" and not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
@@ -220,12 +220,12 @@ class Orb:
             # get property
             data = getattr(self, data_item_name)
             if data is None:
-                logger.warning(f"Data item '{data_item_name}' not found")
+                self._logger.warning(f"Data item '{data_item_name}' not found")
                 continue
             # write to disk
             outfile = os.path.join(outdir, data_item_name.replace("_", "-") + ".csv")
             data.to_csv(outfile, index=False)
-            logger.info(f"'{data_item_name}' saved to: {outfile}")
+            self._logger.info(f"'{data_item_name}' saved to: {outfile}")
             outfiles.append(outfile)
 
     #-- data processing --#
@@ -285,7 +285,7 @@ class Orb:
                 func(shard)
         else:
             with ProcessPoolExecutor() as executor:
-                logging.disable(logging.INFO)
+                self._logger.disable(logging.INFO)
                 desc = 'Processing shards of the Wizard Orb'
                 # Submit the function to the executor for each shard
                 futures = {executor.submit(func, shard) for shard in self.shatter()}
@@ -299,7 +299,7 @@ class Orb:
                         # Handle any exception that occurred during the execution
                         print(f'Exception occurred: {e}')
                 # Re-enable logging
-                logging.disable(logging.NOTSET)
+                self._logger.disable(logging.NOTSET)
     
         # Save DataFrames as CSV files if required
         if save_files:
