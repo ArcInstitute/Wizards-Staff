@@ -3,6 +3,7 @@
 import os
 import logging
 from typing import Tuple
+from pprint import pprint
 ## third party
 import numpy as np
 import pandas as pd
@@ -55,11 +56,13 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     if group_name not in orb.metadata.columns:
         raise ValueError(f'Column "{group_name}" is not a metadata column.')
     d_k_in_groups = orb.metadata.groupby(group_name)['Sample'].apply(list).to_dict()
+    d_dff = {}
+    d_nspIDs = {}
 
     # Iterate over each shard
     for shard in orb.shatter():
-        # Status
-        orb._logger.info(f'Processing {shard.sample_name}...')
+        # Create a dictionary of dff_dat
+        d_dff[shard.sample_name] = shard.get('dff_dat', req=True) 
 
         # Conduct spatial filtering
         filtered_idx = spatial_filtering(
@@ -71,71 +74,69 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
             plot=False, 
             silence=True
         )
+        d_nspIDs[shard.sample_name] = filtered_idx
 
-        # Filter group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
-        filtered_d_k_in_groups = filter_group_keys(
-            d_k_in_groups, shard.get('dff_dat', req=True), filtered_idx
+    # Filter group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
+    filtered_d_k_in_groups = filter_group_keys(d_k_in_groups, d_dff, d_nspIDs)
+
+    # Calculate pairwise correlation means for groups
+    d_mn_pwc, d_mn_pwc_inter, d_mn_pwc_intra = calc_pwc_mn(
+        filtered_d_k_in_groups, d_dff, d_nspIDs, 
+        dff_cut=0.0, norm_corr=False
+    )
+
+    # Convert dictionaries to DataFrames
+    df_mn_pwc = pd.DataFrame.from_dict(d_mn_pwc, orient='index').transpose()
+    df_mn_pwc_inter = pd.DataFrame.from_dict(d_mn_pwc_inter, orient='index').transpose()
+    df_mn_pwc_intra = pd.DataFrame.from_dict(d_mn_pwc_intra, orient='index').transpose()
+
+    # Setting output file name
+    fname = os.path.basename(orb.results_folder) + f"_{group_name}"
+
+    # Plotting and saving figures
+    ## Plot and save the mean pairwise correlation for each group
+    d_title = {
+        'PWC' : df_mn_pwc,
+        'Inter_Group_Mean_PWC' : df_mn_pwc_inter,
+        'Intra_Group_Mean_PWC' : df_mn_pwc_intra 
+    }
+    for title, data in d_title.items():
+        plot_pwc_means(
+            data,
+            title = title,
+            xlabel = 'Groups', 
+            ylabel = 'Mean Pairwise Correlation', 
+            poly = poly, 
+            lwp = lwp, 
+            psz = psz, 
+            pdeg = 4,
+            show_plots = show_plots, 
+            save_files = save_files, 
+            fname = fname,
+            output_dir = output_dir
         )
 
-        # Calculate pairwise correlation means for groups
-        d_mn_pwc, d_mn_pwc_inter, d_mn_pwc_intra = calc_pwc_mn(
-            filtered_d_k_in_groups, 
-            shard.get('dff_dat', req=True), 
-            filtered_idx, 
-            dff_cut=0.0, 
-            norm_corr=False
-        )
-
-        # Convert dictionaries to DataFrames
-        df_mn_pwc = pd.DataFrame.from_dict(d_mn_pwc, orient='index').transpose()
-        df_mn_pwc_inter = pd.DataFrame.from_dict(d_mn_pwc_inter, orient='index').transpose()
-        df_mn_pwc_intra = pd.DataFrame.from_dict(d_mn_pwc_intra, orient='index').transpose()
-
-        # Plotting and saving figures
-        ## Plot and save the mean pairwise correlation for each group
-        d_title = {
-            'PWC' : df_mn_pwc,
-            'Inter_Group_Mean_PWC' : df_mn_pwc_inter,
-            'Intra_Group_Mean_PWC' : df_mn_pwc_intra 
-        }
-        for title, data in d_title.items():
-            plot_pwc_means(
-                data,
-                title = title,
-                xlabel = 'Groups', 
-                ylabel = 'Mean Pairwise Correlation', 
-                poly = poly, 
-                lwp = lwp, 
-                psz = psz, 
-                pdeg = 4,
-                show_plots = show_plots, 
-                save_files = save_files, 
-                fname = shard.sample_name + '_' + title.replace('_', '-'),
-                output_dir = output_dir
-            )
-
-        # Save DataFrames if required
-        if save_files:
-            # Expand the user directory if it exists in the output_dir path
-            output_dir = os.path.expanduser(output_dir)
-        
-            # Create the output directory if it does not exist
-            os.makedirs(output_dir, exist_ok=True)
-        
-            # Define the file paths
-            df_mn_pwc_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc.csv')
-            df_mn_pwc_inter_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc-intra.csv')
-            df_mn_pwc_intra_path = os.path.join(output_dir, f'{shard.sample_name}_df-mn-pwc-inter.csv')
-
-            # Save each DataFrame to a CSV file
-            df_mn_pwc.to_csv(df_mn_pwc_path, index=False)
-            df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
-            df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
-
+    # Save DataFrames if required
     if save_files:
-        orb._logger.info(f'DataFrames saved to {output_dir}')
+        # Expand the user directory if it exists in the output_dir path
+        output_dir = os.path.expanduser(output_dir)
+        
+        # Create the output directory if it does not exist
+        os.makedirs(output_dir, exist_ok=True)
+        orb._logger.info(f'Saving DataFrames to {output_dir}...')
+    
+        # Define the file paths
+        df_mn_pwc_path = os.path.join(output_dir, f'{fname}_df-mn-pwc.csv')
+        df_mn_pwc_inter_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-intra.csv')
+        df_mn_pwc_intra_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-inter.csv')
 
-    #return df_mn_pwc, df_mn_pwc_inter, df_mn_pwc_intra
+        # Save each DataFrame to a CSV file
+        df_mn_pwc.to_csv(df_mn_pwc_path, index=False)
+        df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
+        df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
+
+    # status
+    orb._logger.info('Pairwise correlation analysis completed.')
 
 def calc_pwc_mn(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict, dff_cut: float=0.1, 
                 norm_corr: bool=False) -> Tuple[dict, dict, dict]:
@@ -396,7 +397,11 @@ def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlab
         # Create the output directory if it does not exist
         os.makedirs(output_dir, exist_ok=True)
         # Save the figure
-        plt.savefig(f'{output_dir}{fname}_{title}.png', bbox_inches='tight')
+        title_str = title.replace('_', '-')
+        plt.savefig(
+            os.path.join(output_dir, f'{fname}_{title_str}.png'), 
+            bbox_inches='tight'
+        )
         
     if show_plots:
         plt.show()
