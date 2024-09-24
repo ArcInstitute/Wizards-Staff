@@ -17,7 +17,7 @@ from tqdm.notebook import tqdm
 from wizards_staff.logger import init_custom_logger
 from wizards_staff.pwc import run_pwc as ws_run_pwc
 from wizards_staff.wizards.shard import Shard
-from wizards_staff.wizards.cauldron import _run_all
+from wizards_staff.wizards.cauldron import run_all as ws_run_all
 
 # Functions
 def npy_loader(infile, allow_pickle=True):
@@ -83,6 +83,9 @@ class Orb:
     _input_files: pd.DataFrame = field(default=None, init=False)  # file paths
     _input: pd.DataFrame = field(default=None, init=False)  # all input data
     _samples: set = field(default=None, init=False)  # samples
+    _df_mn_pwc: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
+    _df_mn_pwc_intra: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
+    _df_mn_pwc_inter: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
     
     def __post_init__(self):
         # Configure logging
@@ -241,93 +244,13 @@ class Orb:
             outfiles.append(outfile)
 
     #-- data processing --#
-    def run_all(self, frate: int=30, zscore_threshold: int=3, 
-                percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
-                max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
-                poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
-                save_files: bool=True, output_dir: str='wizard_staff_outputs', 
-                threads: int=2, debug: bool=False) -> None:
+    @wraps(ws_run_all)
+    def run_all(self, **kwargs) -> None:
         """
-        Process the results folder, computes metrics, and stores them in DataFrames.
-    
-        Args:
-            results_folder (str): Path to the results folder.
-            metadata_path (str): Path to the metadata CSV file.
-            frate (int): Frames per second of the imaging session.
-            zscore_threshold (int): Z-score threshold for spike detection.
-            percentage_threshold (float): Percentage threshold for FWHM calculation.
-            p_th (float): Percentile threshold for image processing.
-            min_clusters (int): The minimum number of clusters to try.
-            max_clusters (int): The maximum number of clusters to try.
-            random_seed (int): The seed for random number generation in K-means.
-            group_name (str): Name of the group to which the data belongs. Required for PWC analysis.
-            poly (bool): Flag to control whether to perform polynomial fitting during PWC analysis.
-            size_threshold (int): Size threshold for filtering out noise events.    
-            show_plots (bool): Flag to control whether plots are displayed. 
-            save_files (bool): Flag to control whether files are saved.
-            output_dir (str): Directory where output files will be saved.
-            threads (int): Number of threads to use for processing. 
+        Runs all data processing steps.
         """
-        # Check if the output directory exists
-        if save_files:
-            # Expand the user directory if it exists in the output_dir path
-            output_dir = os.path.expanduser(output_dir)
-            # Create the output directory if it does not exist
-            os.makedirs(output_dir, exist_ok=True)
-    
-        # Process each sample (shard) in parallel
-        func = partial(
-            _run_all, 
-            frate=frate, 
-            zscore_threshold=zscore_threshold, 
-            percentage_threshold=percentage_threshold,
-            p_th=p_th,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters, 
-            random_seed=random_seed,
-            group_name=group_name,
-            poly=poly,
-            size_threshold=size_threshold,
-            show_plots=show_plots,
-            save_files=save_files,
-            output_dir=output_dir
-        )
-        if debug or threads == 1:
-            for shard in self.shatter():
-                func(shard)
-        else:
-            with ProcessPoolExecutor() as executor:
-                logging.disable(logging.INFO)
-                desc = 'Processing shards of the Wizard Orb'
-                # Submit the function to the executor for each shard
-                futures = {executor.submit(func, shard) for shard in self.shatter()}
-                # Use as_completed to get the results as they are completed
-                for future in tqdm(as_completed(futures), total=len(futures), desc=desc):
-                    try:
-                        # Get the result from each completed future
-                        updated_shard = future.result()
-                        self._shards[updated_shard.sample_name] = updated_shard
-                    except Exception as e:
-                        # Handle any exception that occurred during the execution
-                        print(f'Exception occurred: {e}')
-                # Re-enable logging
-                logging.disable(logging.NOTSET)
-    
-        # Save DataFrames as CSV files if required
-        if save_files:
-            self.save_data(output_dir)
-        
-        # Run PWC analysis if group_name is provided
-        if group_name:
-            self.run_pwc(
-                group_name,
-                poly = poly,
-                p_th = p_th,
-                size_threshold = size_threshold,
-                show_plots = show_plots, 
-                save_files = save_files, 
-                output_dir = output_dir
-            )
+        # run all processing steps
+        ws_run_all(self, **kwargs)
 
     @wraps(ws_run_pwc)
     def run_pwc(self, **kwargs) -> None:
@@ -410,6 +333,22 @@ class Orb:
         return self._input
 
     @property
+    def results(self) -> Dict[str, pd.DataFrame]:
+        """
+        Return all results
+        """
+        return {
+            'rise_time_data': self.rise_time_data,
+            'fwhm_data': self.fwhm_data,
+            'frpm_data': self.frpm_data,
+            'mask_metrics_data': self.mask_metrics_data,
+            'silhouette_scores_data': self.silhouette_scores_data,
+            'df_mn_pwc': self.df_mn_pwc,
+            'df_mn_pwc_intra': self.df_mn_pwc_intra,
+            'df_mn_pwc_inter': self.df_mn_pwc_inter
+        }
+
+    @property
     def rise_time_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_rise_time_data')
         if DF is None:
@@ -452,3 +391,36 @@ class Orb:
         if DF is None:
             return None
         return DF.merge(self.metadata, on='Sample', how='left')
+
+    # pairwise correlations
+    @property
+    def df_mn_pwc(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with pairwise correlation results.
+        """
+        return self._df_mn_pwc
+
+    @property
+    def df_mn_pwc_intra(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with pairwise correlation results for intra-sample comparisons.
+        """
+        return self._df_mn_pwc_intra
+    
+    @property
+    def df_mn_pwc_inter(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with pairwise correlation results for inter-sample comparisons.
+        """
+        return self._df_mn_pwc_inter
+
+    @property
+    def df_mn_pwc_all(self) -> Dict[str, pd.DataFrame]:
+        """
+        Returns a dictionary of pairwise correlation DataFrames.
+        """
+        return {
+            'all': self.df_mn_pwc,
+            'intra': self.df_mn_pwc_intra,
+            'inter': self.df_mn_pwc_inter
+        }

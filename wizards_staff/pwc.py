@@ -135,6 +135,11 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
         df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
         df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
 
+    # add results to orb
+    orb._df_mn_pwc = df_mn_pwc
+    orb._df_mn_pwc_inter = df_mn_pwc_inter
+    orb._df_mn_pwc_intra = df_mn_pwc_intra
+
     # status
     orb._logger.info('Pairwise correlation analysis completed.')
 
