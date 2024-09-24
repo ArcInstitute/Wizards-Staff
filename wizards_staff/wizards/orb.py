@@ -82,6 +82,8 @@ class Orb:
     _shards: Dict[str, Shard] = field(default_factory=dict, init=False)   # loaded data
     _data_mapping: Dict[str, Any] = field(default_factory=lambda: DATA_ITEM_MAPPING, init=False)  # data item mapping
     _input_files: pd.DataFrame = field(default=None, init=False)  # file paths
+    _input: pd.DataFrame = field(default=None, init=False)  # all input data
+    _samples: set = field(default=None, init=False)  # samples
     
     def __post_init__(self):
         # load metadata
@@ -156,12 +158,6 @@ class Orb:
             raise ValueError(f"Missing columns in metadata file: {cols_str}")
 
     #-- get items --#
-    def list_samples(self) -> List[str]:
-        """
-        Returns a list of all sample names.
-        """
-        return list(self._shards.keys())
-
     def list_data_items(self, sample: str) -> List[str]:
         """
         Lists all data items for a given sample.
@@ -185,18 +181,6 @@ class Orb:
         """
         yield from self._shards.items()
 
-    def to_dataframe(self) -> pd.DataFrame:
-        """
-        Returns a DataFrame with all data items and file paths.
-        """
-        DF = []
-        for sample_name, shard in self._shards.items():
-            for data_item_name, (file_path, _) in shard.files.items():
-                DF.append([sample_name, data_item_name, file_path])
-        DF = pd.DataFrame(DF, columns=['Sample', 'DataItem', 'FilePath'])
-        # merge with metadata
-        return pd.merge(DF, self.metadata, on='Sample', how='left')
-
     def _get_shard_data(self, attr_name: str) -> pd.DataFrame:
         """Dynamically generate a DataFrame for the given attribute from shards."""
         attr = getattr(self, attr_name)
@@ -207,6 +191,8 @@ class Orb:
                 shard_data = getattr(shard, attr_name, None)
                 if shard_data is not None:
                     DF += shard_data
+            if len(DF) == 0:
+                return None
             attr = pd.DataFrame(DF)
             # Cache the result
             setattr(self, attr_name, attr)  
@@ -364,6 +350,12 @@ class Orb:
 
     #-- properties --#
     @property
+    def samples(self):
+        if self._samples is None:
+            self._samples = set(self._shards.keys())
+        return self._samples
+    
+    @property
     def num_shards(self):
         return len(self._shards)
 
@@ -386,8 +378,22 @@ class Orb:
         return self._input_files
 
     @property
+    def input(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with all data items and file paths, merged with metadata.
+        """
+        if self._input is None:
+            self._input = pd.merge(
+                self.input_files.copy(), 
+                self.metadata, on='Sample', how='left'
+            )
+        return self._input
+
+    @property
     def rise_time_data(self):
         DF = self._get_shard_data('_rise_time_data')
+        if DF is None:
+            return None
         # explode columns, if they exist
         cols = ['Rise Times', 'Rise Positions']        
         if all(col in DF.columns for col in cols):
@@ -398,6 +404,8 @@ class Orb:
     @property
     def fwhm_data(self):
         DF = self._get_shard_data('_fwhm_data')
+        if DF is None:
+            return None
         # explode columns, if they exist
         cols = ['FWHM Backward Positions', 'FWHM Forward Positions', 'FWHM Values', 'Spike Counts']
         if all(col in DF.columns for col in cols):
@@ -407,14 +415,20 @@ class Orb:
     @property
     def frpm_data(self):
         DF = self._get_shard_data('_frpm_data')
+        if DF is None:
+            return None
         return DF.merge(self.metadata, on='Sample', how='left')
 
     @property
     def mask_metrics_data(self):
         DF = self._get_shard_data('_mask_metrics_data')
+        if DF is None:
+            return None
         return DF.merge(self.metadata, on='Sample', how='left')
     
     @property
     def silhouette_scores_data(self):
         DF = self._get_shard_data('_silhouette_scores_data')
+        if DF is None:
+            return None
         return DF.merge(self.metadata, on='Sample', how='left')
