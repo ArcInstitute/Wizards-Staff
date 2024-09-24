@@ -1,9 +1,13 @@
 import logging
 
 # logger_config.py
-def init_custom_logger(name):
+def init_custom_logger(name: str) -> logging.Logger:
     """
     Sets up and returns a custom logger with the specified name.
+    Args:
+        name: The name of the logger.
+    Returns:
+        The custom logger.
     """
     # Create a custom logger
     logger = logging.getLogger(name)

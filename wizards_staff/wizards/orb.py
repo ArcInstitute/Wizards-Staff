@@ -145,6 +145,8 @@ class Orb:
                 print(msg, file=sys.stderr)
     
     def _load_metadata(self, metadata_file_path: str):
+        # status
+        self._logger.info(f"Loading metadata from: {metadata_file_path}")
         # check if metadata file exists
         if not os.path.exists(metadata_file_path):
             raise FileNotFoundError(f"Metadata file not found: {metadata_file_path}")
@@ -366,14 +368,8 @@ class Orb:
     @property
     def input_files(self) -> pd.DataFrame:
         if self._input_files is None:
-            # get all input files from all shards
-            ret = []
-            for sample_name, shard in self._shards.items():
-                for data_item_name, (file_path, _) in shard.files.items():
-                    ret.append([sample_name, data_item_name, file_path])
-            # convert to a DataFrame
-            self._input_files = pd.DataFrame(
-                ret, columns=['Sample', 'DataItem', 'FilePath']
+            self._input_files = pd.concat(
+                [shard.input_files for shard in self.shards]
             )
         return self._input_files
 

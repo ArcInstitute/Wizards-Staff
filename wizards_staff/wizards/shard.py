@@ -27,6 +27,7 @@ class Shard:
     _mask_metrics_data: list = field(default_factory=list, init=False)
     _silhouette_scores_data: list = field(default_factory=list, init=False)
     _data_items: dict = field(default_factory=dict, init=False) 
+    _input_files: pd.DataFrame = field(default=None, init=False)
     
     def __post_init__(self):
         self._logger = init_custom_logger(__name__)
@@ -91,12 +92,24 @@ class Shard:
         """
         Prints data_item_name : file_path for this shard.
         """
-        ret = []
-        for data_item_name, (file_path, _) in self.files.items():
-            ret.append(f"{data_item_name} : {file_path}")
-        return '\n'.join(ret)
+        return self.input_files.to_string()
 
-    # properties
+    __repr__ = __str__
+
+    #-- properties --#
+    @property
+    def input_files(self) -> pd.DataFrame:
+        if self._input_files is None:
+            # get all input files from all shards
+            ret = []
+            for data_item_name, (file_path, _) in self.files.items():
+                ret.append([self.sample_name, data_item_name, file_path])
+            # convert to a DataFrame
+            self._input_files = pd.DataFrame(
+                ret, columns=['Sample', 'DataItem', 'FilePath']
+            )
+        return self._input_files
+
     @property
     def rise_time_data(self):
         return self._rise_time_data
