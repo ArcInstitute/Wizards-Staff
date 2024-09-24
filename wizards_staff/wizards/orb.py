@@ -3,7 +3,7 @@
 import os
 import sys
 import logging
-from typing import Callable, Dict, Any, Generator, Tuple, List
+from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -13,6 +13,7 @@ import pandas as pd
 from tifffile import imread
 from tqdm.notebook import tqdm
 ## package
+from wizards_staff.logger import init_custom_logger
 from wizards_staff.pwc import run_pwc
 from wizards_staff.wizards.shard import Shard
 from wizards_staff.wizards.cauldron import _run_all
@@ -70,7 +71,7 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
-    _logger: logging.Logger = field(default=None, init=False)
+    _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: pd.DataFrame = field(default=None, init=False)
     _fwhm_data: pd.DataFrame = field(default=None, init=False)
     _frpm_data: pd.DataFrame = field(default=None, init=False)
@@ -84,8 +85,7 @@ class Orb:
     
     def __post_init__(self):
         # Configure logging
-        logging.basicConfig(level=logging.INFO, format='%(message)s', force=True)
-        self._logger = logging.getLogger(__name__)
+        self._logger = init_custom_logger(__name__)
         # load metadata
         self._load_metadata(self.metadata_file_path)
         self._samples = set(self.metadata['Sample'])

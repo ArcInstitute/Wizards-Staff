@@ -3,11 +3,13 @@
 import os
 import sys
 import logging
-from typing import Callable, Dict, Any, Generator, Tuple, List
+from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
 ## 3rd party
 import numpy as np
 import pandas as pd
+## package
+from wizards_staff.logger import init_custom_logger
 
 # classes
 @dataclass
@@ -18,6 +20,7 @@ class Shard:
     sample_name: str
     metadata: pd.DataFrame
     files: dict
+    _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: list = field(default_factory=list, init=False)
     _fwhm_data: list = field(default_factory=list, init=False)
     _frpm_data: list = field(default_factory=list, init=False)
@@ -25,6 +28,9 @@ class Shard:
     _silhouette_scores_data: list = field(default_factory=list, init=False)
     _data_items: dict = field(default_factory=dict, init=False) 
     
+    def __post_init__(self):
+        self._logger = init_custom_logger(__name__)
+
     def get_data_item(self, item_name: str) -> Any:
         """
         Retrieves the data item for the given name, loading it if not already loaded.
