@@ -6,7 +6,7 @@ import logging
 import pickle
 from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
-from functools import partial
+from functools import partial, wraps
 from concurrent.futures import ProcessPoolExecutor, as_completed
 ## 3rd party
 import numpy as np
@@ -15,7 +15,7 @@ from tifffile import imread
 from tqdm.notebook import tqdm
 ## package
 from wizards_staff.logger import init_custom_logger
-from wizards_staff.pwc import run_pwc
+from wizards_staff.pwc import run_pwc as ws_run_pwc
 from wizards_staff.wizards.shard import Shard
 from wizards_staff.wizards.cauldron import _run_all
 
@@ -318,23 +318,24 @@ class Orb:
             self.save_data(output_dir)
         
         # Run PWC analysis if group_name is provided
-        # if group_name:
-        #     orb.run_pwc(
-        #         group_name, metadata_path, results_folder, 
-        #         poly = poly,
-        #         show_plots = show_plots, 
-        #         save_files = save_files, 
-        #         output_dir = output_dir
-        #     )
+        if group_name:
+            self.run_pwc(
+                group_name,
+                poly = poly,
+                p_th = p_th,
+                size_threshold = size_threshold,
+                show_plots = show_plots, 
+                save_files = save_files, 
+                output_dir = output_dir
+            )
 
+    @wraps(ws_run_pwc)
     def run_pwc(self, **kwargs) -> None:
         """
         Runs pairwise correlation analysis on all samples.
-        Args:
-            **kwargs: Keyword arguments to pass to `run_pwc
         """
         # run PWC on each sample
-        run_pwc(self, **kwargs)
+        ws_run_pwc(self, **kwargs)
 
     def save(self, outfile: str) -> None:
         """
@@ -409,7 +410,7 @@ class Orb:
         return self._input
 
     @property
-    def rise_time_data(self):
+    def rise_time_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_rise_time_data')
         if DF is None:
             return None
@@ -421,7 +422,7 @@ class Orb:
         return DF.merge(self.metadata, on='Sample', how='left')
 
     @property
-    def fwhm_data(self):
+    def fwhm_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_fwhm_data')
         if DF is None:
             return None
@@ -432,21 +433,21 @@ class Orb:
         return DF.merge(self.metadata, on='Sample', how='left')
 
     @property
-    def frpm_data(self):
+    def frpm_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_frpm_data')
         if DF is None:
             return None
         return DF.merge(self.metadata, on='Sample', how='left')
 
     @property
-    def mask_metrics_data(self):
+    def mask_metrics_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_mask_metrics_data')
         if DF is None:
             return None
         return DF.merge(self.metadata, on='Sample', how='left')
     
     @property
-    def silhouette_scores_data(self):
+    def silhouette_scores_data(self) -> pd.DataFrame:
         DF = self._get_shard_data('_silhouette_scores_data')
         if DF is None:
             return None

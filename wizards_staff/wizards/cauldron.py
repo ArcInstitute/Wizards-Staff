@@ -33,13 +33,12 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     Args:
         See run_all function.
     Returns:
-        shard: The updated shard
+        shard: The updated shard object
     """    
     logger.info(f'Processing shard: {shard.sample_name}')
 
     # Apply spatial filtering to the data to remove noise
     filtered_idx = spatial_filtering(
-        #cn_filter=shard.get('cn_filter'), 
         p_th=p_th, 
         size_threshold=size_threshold, 
         cnm_A=shard.get('cnm_A', req=True), 
