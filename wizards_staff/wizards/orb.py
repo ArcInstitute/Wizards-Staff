@@ -169,21 +169,6 @@ class Orb:
             raise ValueError(f"Missing columns in metadata file: {cols_str}")
 
     #-- get items --#
-    def list_data_items(self, sample: str) -> List[str]:
-        """
-        Lists all data items for a given sample.
-        Args:
-            sample: Sample name.
-        Returns:
-            List of data items.
-        """
-        shard = self._shards.get(sample)
-        if shard:
-            return list(shard.get_data_items())
-        else:
-            self._logger.warning(f"Sample '{sample}' not found")
-            return []
-
     def shatter(self) -> Generator[Shard, None, None]:
         """
         Yields each Shard (sample's data) in the Orb.
@@ -274,14 +259,6 @@ class Orb:
         self._logger.info(f"Orb saved to: {outfile}")
 
     #-- misc --#
-    def __str__(self) -> str:
-        """
-        Prints sample : data_item_name : file_path for all shards.
-        """
-        return self.input_files.to_string()
-
-    __repr__ = __str__
-
     def _repr_html_(self):
         return self.input_files.to_html()
 
@@ -423,3 +400,12 @@ class Orb:
             'intra': self.df_mn_pwc_intra,
             'inter': self.df_mn_pwc_inter
         }
+
+    #-- dunders --#
+    def __str__(self) -> str:
+        """
+        Prints sample : data_item_name : file_path for all shards.
+        """
+        return self.input_files.to_string()
+
+    __repr__ = __str__

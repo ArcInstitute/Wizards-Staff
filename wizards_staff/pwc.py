@@ -61,15 +61,15 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     # Iterate over each shard
     for shard in orb.shatter():
         # Create a dictionary of dff_dat
-        d_dff[shard.sample_name] = shard.get('dff_dat', req=True) 
+        d_dff[shard.sample_name] = shard.get_input('dff_dat', req=True) 
 
         # Conduct spatial filtering
         filtered_idx = spatial_filtering(
             p_th=p_th, 
             size_threshold=size_threshold, 
-            cnm_A=shard.get('cnm_A', req=True), 
-            cnm_idx=shard.get('cnm_idx', req=True),
-            im_min=shard.get('minprojection', req=True),
+            cnm_A=shard.get_input('cnm_A', req=True), 
+            cnm_idx=shard.get_input('cnm_idx', req=True),
+            im_min=shard.get_input('minprojection', req=True),
             plot=False, 
             silence=True
         )

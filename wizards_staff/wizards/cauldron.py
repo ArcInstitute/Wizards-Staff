@@ -134,15 +134,15 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     filtered_idx = spatial_filtering(
         p_th=p_th, 
         size_threshold=size_threshold, 
-        cnm_A=shard.get('cnm_A', req=True), 
-        cnm_idx=shard.get('cnm_idx', req=True), 
-        im_min=shard.get('minprojection', req=True),   # ['im_min'], 
+        cnm_A=shard.get_input('cnm_A', req=True), 
+        cnm_idx=shard.get_input('cnm_idx', req=True), 
+        im_min=shard.get_input('minprojection', req=True),   # ['im_min'], 
         plot=False, 
         silence=True,
     )
     
     # Load the ΔF/F₀ data for the given image file and add a small constant to avoid division by zero``
-    dff_dat = np.copy(shard.get('dff_dat', req=True))  # Copy the ΔF/F₀ data
+    dff_dat = np.copy(shard.get_input('dff_dat', req=True))  # Copy the ΔF/F₀ data
     dff_dat += 0.0001  # Small constant added to avoid division by zero
 
     # Convert ΔF/F₀ to calcium signals and spike events
@@ -201,8 +201,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         })
 
     # Calculate mask metrics and store them      
-    if shard.get('mask') is not None:
-        mask_metrics = calc_mask_shape_metrics(shard.get('mask'))
+    if shard.get_input('mask') is not None:
+        mask_metrics = calc_mask_shape_metrics(shard.get_input('mask'))
     shard._mask_metrics_data.append({
         'Sample': shard.sample_name,
         'Roundness':  mask_metrics.get('roundness'),
@@ -212,7 +212,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
 
     # Create ΔF/F₀ graph
     plot_dff_activity(
-        shard.get('dff_dat', req=True), filtered_idx, frate, shard.sample_name,
+        shard.get_input('dff_dat', req=True), 
+        filtered_idx, frate, shard.sample_name,
         sz_per_neuron=0.5, 
         show_plots=show_plots, 
         save_files=save_files, 
@@ -221,7 +222,7 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
 
     # Perform K-means clustering and plot
     silhouette_score, num_clusters = plot_kmeans_heatmap(
-        dff_dat=shard.get('dff_dat', req=True), 
+        dff_dat=shard.get_input('dff_dat', req=True), 
         filtered_idx=filtered_idx, 
         sample_name=shard.sample_name,
         min_clusters=min_clusters, 
@@ -241,7 +242,7 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
 
     # Plot cluster activity
     plot_cluster_activity(
-        dff_dat = shard.get('dff_dat', req=True), 
+        dff_dat = shard.get_input('dff_dat', req=True), 
         filtered_idx = filtered_idx, 
         min_clusters = min_clusters, 
         max_clusters = max_clusters, 
@@ -255,8 +256,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
 
     # Plot spatial activity map
     plot_spatial_activity_map(
-        shard.get('minprojection', req=True),  #['im_min'], 
-        shard.get('cnm_A', req=True), 
+        shard.get_input('minprojection', req=True),  #['im_min'], 
+        shard.get_input('cnm_A', req=True), 
         filtered_idx, 
         shard.sample_name,
         min_clusters = min_clusters, 
@@ -264,21 +265,21 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         random_seed = random_seed,
         show_plots = show_plots, 
         save_files = save_files,
-        dff_dat = shard.get('dff_dat'),
+        dff_dat = shard.get_input('dff_dat'),
         output_dir = output_dir
     )
     
     # Plot spatial activity map with clustering
     plot_spatial_activity_map(
-        shard.get('minprojection', req=True),  #['im_min'], 
-        shard.get('cnm_A', req=True), 
+        shard.get_input('minprojection', req=True),  #['im_min'], 
+        shard.get_input('cnm_A', req=True), 
         filtered_idx, 
         shard.sample_name,
         min_clusters = min_clusters, 
         max_clusters = max_clusters, 
         random_seed= random_seed,
         clustering = True, 
-        dff_dat = shard.get('dff_dat', req=True), 
+        dff_dat = shard.get_input('dff_dat', req=True), 
         show_plots = show_plots, 
         save_files = save_files,
         output_dir = output_dir
