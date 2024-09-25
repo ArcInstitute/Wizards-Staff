@@ -11,7 +11,15 @@ import numpy as np
 import pandas as pd
 ## package
 from wizards_staff.logger import init_custom_logger
-from wizards_staff.wizards.spellbook import convert_f_to_cs as ws_convert_f_to_cs
+from wizards_staff.wizards.familiars import (
+    spatial_filtering as ws_spatial_filtering
+) 
+from wizards_staff.wizards.spellbook import (
+    convert_f_to_cs as ws_convert_f_to_cs,
+    calc_rise_tm as ws_calc_rise_tm,
+    calc_fwhm_spikes as ws_calc_fwhm_spikes,
+    calc_frpm as ws_calc_frpm,
+)
 
 # classes
 @dataclass
@@ -77,7 +85,40 @@ class Shard:
             self.get_input('dff_dat', req=True) + 0.0001,
             *args, **kwargs
         )
-    
+
+    @wraps(ws_spatial_filtering)
+    def spatial_filtering(self, *args, **kwargs) -> np.ndarray:
+        return ws_spatial_filtering(
+            *args,
+            cnm_A=self.get_input('cnm_A', req=True), 
+            cnm_idx=self.get_input('cnm_idx', req=True), 
+            im_min=self.get_input('minprojection', req=True), 
+            **kwargs
+        )
+
+    @wraps(ws_calc_rise_tm)
+    def calc_rise_tm(self, calcium_signals, spike_events, *args, **kwargs
+                     ) -> Tuple[np.ndarray, np.ndarray]:
+        return ws_calc_rise_tm(
+            calcium_signals, spike_events, *args, **kwargs
+        )
+
+    @wraps(ws_calc_fwhm_spikes)
+    def calc_fwhm_spikes(self, calcium_signals, 
+                         zscored_spike_events,
+                         *args, **kwargs
+                         ) -> Tuple[Dict[int, List[int]], Dict[int, List[int]], Dict[int, List[int]], Dict[int, List[int]]]:
+        return ws_calc_fwhm_spikes(
+            calcium_signals, zscored_spike_events, *args, **kwargs
+        )
+
+    @wraps(ws_calc_frpm)
+    def calc_frpm(self, zscored_spike_events, filtered_idx, frate, 
+                  *args, **kwargs) -> float:
+        return ws_calc_frpm(
+            zscored_spike_events, filtered_idx, frate, *args, **kwargs
+        )
+
     #-- properties --#
     @property
     def input_files(self) -> pd.DataFrame:

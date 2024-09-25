@@ -131,12 +131,9 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     logger.info(f'Processing shard: {shard.sample_name}')
 
     # Apply spatial filtering to the data to remove noise
-    filtered_idx = spatial_filtering(
+    filtered_idx = shard.spatial_filtering(
         p_th=p_th, 
-        size_threshold=size_threshold, 
-        cnm_A=shard.get_input('cnm_A', req=True), 
-        cnm_idx=shard.get_input('cnm_idx', req=True), 
-        im_min=shard.get_input('minprojection', req=True),   # ['im_min'], 
+        size_threshold=size_threshold,
         plot=False, 
         silence=True,
     )
@@ -152,20 +149,22 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     calcium_signals_filtered = calcium_signals[filtered_idx, :]
 
     # Calculate rise time and positions:
-    rise_tm, rise_tm_pos = calc_rise_tm(
-        calcium_signals_filtered, zscored_spike_events_filtered, 
+    rise_tm, rise_tm_pos = shard.calc_rise_tm(
+        calcium_signals_filtered, 
+        zscored_spike_events_filtered, 
         zscore_threshold=zscore_threshold
     )
 
     # Calculate FWHM and related metrics
-    fwhm_pos_back, fwhm_pos_fwd, fwhm, spike_counts = calc_fwhm_spikes(
-        calcium_signals_filtered, zscored_spike_events_filtered,
+    fwhm_pos_back, fwhm_pos_fwd, fwhm, spike_counts = shard.calc_fwhm_spikes(
+        calcium_signals_filtered, 
+        zscored_spike_events_filtered,
         zscore_threshold=zscore_threshold, 
         percentage_threshold=percentage_threshold
     )
 
     # Calculate FRPM:
-    _, frpm  = calc_frpm(
+    _, frpm  = shard.calc_frpm(
         zscored_spike_events, filtered_idx, frate, 
         zscore_threshold=zscore_threshold
     )

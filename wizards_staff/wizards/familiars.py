@@ -69,13 +69,7 @@ def spatial_filtering(p_th: float, size_threshold: int, cnm_A: np.ndarray, cnm_i
     Returns:
         filtered_idx (list): List of indices of the filtered components.
     """
-    #print('Applying spatial filtering to components...', file=sys.stderr)
-
     # Load the mask image and get its shape
-    if plot:
-        im_min = imread(im_min)
-    #mask_image = imread(cn_filter)
-    #im_shape = mask_image.shape
     im_shape = im_min.shape
     im_sz = [im_shape[0], im_shape[1]]
     
