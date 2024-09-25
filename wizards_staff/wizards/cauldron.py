@@ -77,11 +77,11 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
     )
     desc = 'Shattering the orb and processing each shard...'
     if debug or threads == 1:
-        self._logger.info(desc)
+        orb._logger.info(desc)
         for shard in orb.shatter():
             func(shard)
     else:
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(max_workers=threads) as executor:
             logging.disable(logging.INFO)
             # Submit the function to the executor for each shard
             futures = {executor.submit(func, shard) for shard in orb.shatter()}
@@ -114,7 +114,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
             **kwargs
         )
     else:
-        self._logger.warning('Skipping PWC analysis as group_name is not provided.')
+        orb._logger.warning('Skipping PWC analysis as group_name is not provided.')
 
 def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_threshold: float, 
              p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 
@@ -141,12 +141,8 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         silence=True,
     )
     
-    # Load the ΔF/F₀ data for the given image file and add a small constant to avoid division by zero``
-    dff_dat = np.copy(shard.get_input('dff_dat', req=True))  # Copy the ΔF/F₀ data
-    dff_dat += 0.0001  # Small constant added to avoid division by zero
-
     # Convert ΔF/F₀ to calcium signals and spike events
-    calcium_signals, spike_events = convert_f_to_cs(dff_dat, p=2)
+    calcium_signals, spike_events = shard.convert_f_to_cs(p=2)
 
     # Z-score the spike events
     zscored_spike_events = zscore(np.copy(spike_events), axis=1)

@@ -5,6 +5,7 @@ import sys
 import logging
 from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
+from functools import wraps
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -21,8 +22,8 @@ class Shard:
     sample_name: str
     metadata: pd.DataFrame
     files: dict
-    _input_items: dict = field(default=None, init=False)
     _input_files: pd.DataFrame = field(default=None, init=False)
+    _input_items: dict = field(default_factory=dict)
     _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: list = field(default_factory=list, init=False)
     _fwhm_data: list = field(default_factory=list, init=False)
@@ -32,7 +33,6 @@ class Shard:
     
     def __post_init__(self):
         self._logger = init_custom_logger(__name__)
-        self._input_items = {}
 
     def get_input(self, item_name: str, req: bool=False) -> Any:
         """
@@ -71,8 +71,13 @@ class Shard:
         return item_name in self.files
 
     #-- data analysis --#
+    @wraps(ws_convert_f_to_cs)
+    def convert_f_to_cs(self, *args, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+        return ws_convert_f_to_cs(
+            self.get_input('dff_dat', req=True) + 0.0001,
+            *args, **kwargs
+        )
     
-
     #-- properties --#
     @property
     def input_files(self) -> pd.DataFrame:
@@ -116,19 +121,3 @@ class Shard:
 
     __repr__ = __str__
 
-
-    # def _get_data(self, attr_name: str) -> pd.DataFrame:
-    #     """Dynamically generate a DataFrame for the given attribute from shards."""
-    #     print('here');
-    #     attr = getattr(self, attr_name)
-    #     if attr is None or :
-    #         # Create DataFrame if it doesn't exist
-    #         shard_data = getattr(self, attr_name, None)
-    #         if shard_data is not None:
-    #             return None
-    #         print(shard_data); exit()
-    #         attr = pd.DataFrame(shard_data)
-    #         print(attr); exit()
-    #         # Cache the result
-    #         setattr(self, attr_name, attr)  
-    #     return attr

@@ -131,7 +131,6 @@ class Orb:
                     )
                     shard.files[item_name] = (file_path, data_info['loader'])
                     break
-
         # check for missing files
         for item_name in self._data_mapping.keys():
             missing_samples = []
@@ -250,6 +249,7 @@ class Orb:
         Args:
             outfile: Output file path.
         """
+        # output directory
         outdir = os.path.dirname(outfile)
         if outdir != "" and not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
