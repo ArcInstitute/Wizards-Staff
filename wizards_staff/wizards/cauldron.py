@@ -197,7 +197,7 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
 
     # Calculate mask metrics and store them      
     if shard.get_input('mask') is not None:
-        mask_metrics = calc_mask_shape_metrics(shard.get_input('mask'))
+        mask_metrics = shard.calc_mask_shape_metrics()
     shard._mask_metrics_data.append({
         'Sample': shard.sample_name,
         'Roundness':  mask_metrics.get('roundness'),

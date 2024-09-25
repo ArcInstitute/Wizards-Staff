@@ -19,6 +19,7 @@ from wizards_staff.wizards.spellbook import (
     calc_rise_tm as ws_calc_rise_tm,
     calc_fwhm_spikes as ws_calc_fwhm_spikes,
     calc_frpm as ws_calc_frpm,
+    calc_mask_shape_metrics as ws_calc_mask_shape_metrics,
 )
 
 # classes
@@ -118,6 +119,10 @@ class Shard:
         return ws_calc_frpm(
             zscored_spike_events, filtered_idx, frate, *args, **kwargs
         )
+
+    @wraps(ws_calc_mask_shape_metrics)
+    def calc_mask_shape_metrics(self, *args, **kwargs) -> Dict[str, float]:
+        return ws_calc_mask_shape_metrics(self.get_input('mask'), *args, **kwargs)
 
     #-- properties --#
     @property

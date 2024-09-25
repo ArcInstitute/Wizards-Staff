@@ -216,12 +216,13 @@ def calc_frpm(zscored_spike_events: np.ndarray, neuron_ids: np.ndarray, fps: int
     
     return frpm, spike_dict
 
-def calc_mask_shape_metrics(mask_image: str) -> Dict[str, float]:
+def calc_mask_shape_metrics(mask_image: np.ndarray) -> Dict[str, float]:
     """
     Loads a binary mask image and calculates roundness, diameter, and area of the masked spheroid/organoid.
+    Returns None if the input is None.
 
     Args:
-        mask_path: Path to the mask image.
+        mask_image: Binary mask image of the spheroid/organoid.
 
     Returns:
         Dictionary containing roundness, diameter, and area of the masked object.
