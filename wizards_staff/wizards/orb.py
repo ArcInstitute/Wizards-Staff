@@ -181,7 +181,9 @@ class Orb:
         yield from self._shards.items()
 
     def _get_shard_data(self, attr_name: str) -> pd.DataFrame:
-        """Dynamically generate a DataFrame for the given attribute from shards."""
+        """
+        Dynamically generate a DataFrame for the given attribute from shards.
+        """
         attr = getattr(self, attr_name)
         if attr is None:
             # Create DataFrame if it doesn't exist
@@ -245,7 +247,7 @@ class Orb:
 
     def save(self, outfile: str) -> None:
         """
-        Saves the Orb object to disk.
+        Saves the Orb object to disk via pickle.
         Args:
             outfile: Output file path.
         """
@@ -326,6 +328,9 @@ class Orb:
 
     @property
     def rise_time_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with rise time data.
+        """
         DF = self._get_shard_data('_rise_time_data')
         if DF is None:
             return None
@@ -338,6 +343,9 @@ class Orb:
 
     @property
     def fwhm_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with FWHM data.
+        """
         DF = self._get_shard_data('_fwhm_data')
         if DF is None:
             return None
@@ -349,6 +357,9 @@ class Orb:
 
     @property
     def frpm_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with FRPM data.
+        """
         DF = self._get_shard_data('_frpm_data')
         if DF is None:
             return None
@@ -356,6 +367,9 @@ class Orb:
 
     @property
     def mask_metrics_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with mask metrics data.
+        """
         DF = self._get_shard_data('_mask_metrics_data')
         if DF is None:
             return None
@@ -363,6 +377,9 @@ class Orb:
     
     @property
     def silhouette_scores_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with silhouette scores data.
+        """
         DF = self._get_shard_data('_silhouette_scores_data')
         if DF is None:
             return None
@@ -404,7 +421,7 @@ class Orb:
     #-- dunders --#
     def __str__(self) -> str:
         """
-        Prints sample : data_item_name : file_path for all shards.
+        Returns the input file summary table as a string
         """
         return self.input_files.to_string()
 

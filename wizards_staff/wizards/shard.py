@@ -76,6 +76,10 @@ class Shard:
     def has_file(self, item_name: str) -> bool:
         """
         Checks if a data item is available for this sample.
+        Args:
+            item_name: The data item name to check.
+        Returns:
+            True if the data item is available, False otherwise.
         """
         return item_name in self.files
 
@@ -127,6 +131,9 @@ class Shard:
     #-- properties --#
     @property
     def input_files(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame of input files for the shard object.
+        """
         if self._input_files is None:
             # get all input files from all shards
             ret = []
@@ -161,7 +168,7 @@ class Shard:
     #-- dunders --#
     def __str__(self) -> str:
         """
-        Prints data_item_name : file_path for this shard.
+        Prints the input files for the shard.
         """
         return self.input_files.to_string()
 
