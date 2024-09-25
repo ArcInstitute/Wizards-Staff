@@ -244,20 +244,20 @@ class Orb:
 
     #-- data processing --#
     @wraps(ws_run_all)
-    def run_all(self, **kwargs) -> None:
+    def run_all(self, *args, **kwargs) -> None:
         """
         Runs all data processing steps.
         """
         # run all processing steps
-        ws_run_all(self, **kwargs)
+        ws_run_all(self, *args, **kwargs)
 
     @wraps(ws_run_pwc)
-    def run_pwc(self, **kwargs) -> None:
+    def run_pwc(self, *args, **kwargs) -> None:
         """
         Runs pairwise correlation analysis on all samples.
         """
         # run PWC on each sample
-        ws_run_pwc(self, **kwargs)
+        ws_run_pwc(self, *args, **kwargs)
 
     def save(self, outfile: str) -> None:
         """

@@ -27,7 +27,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
             percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
             max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
             poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
-            save_files: bool=True, output_dir: str='wizard_staff_outputs', 
+            save_files: bool=False, output_dir: str='wizard_staff_outputs', 
             threads: int=2, debug: bool=False, **kwargs) -> None:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
@@ -113,6 +113,8 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
             output_dir = output_dir,
             **kwargs
         )
+    else:
+        self._logger.warning('Skipping PWC analysis as group_name is not provided.')
 
 def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_threshold: float, 
              p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 
