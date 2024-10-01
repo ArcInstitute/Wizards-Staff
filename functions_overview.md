@@ -20,7 +20,7 @@ This document provides an overview of the functions in the `wizards_staff` Pytho
 ### `run_all`
 
 ```python
-def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75, min_clusters=2, 
+run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percentage_threshold = 0.2, p_th = 75, min_clusters=2, 
     max_clusters=10, random_seed = 1111111, group_name = None, poly = False, size_threshold = 20000, show_plots=True, 
     save_files=True, output_dir='./wizard_staff_outputs')
 ```
@@ -160,7 +160,7 @@ Loads a binary mask image and calculates roundness, diameter, and area of the ma
 **Function**: Plots the activity of neurons by overlaying the spatial footprints on a single image.
 
 ```python
-def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
+plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
  min_clusters=2, max_clusters=10, random_seed=1111111, show_plots=True, 
  save_files=False,clustering=False, dff_data=None, output_dir='./wizard_staff_outputs')
 ```
@@ -192,7 +192,7 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
 Generates a K-means clustering heatmap and outputs clustering metrics to a file.
 
 ```python
-def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', min_clusters=2,
+plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wizard_staff_outputs', min_clusters=2,
     max_clusters=10, random_seed=1111111, show_plots=True, save_files = True)
 ```
 
@@ -218,7 +218,7 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename,  output_dir='./wiz
 ### `plot_cluster_activity`
 
 ```python
-def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
+plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
     norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs')
 ```
 
@@ -242,7 +242,7 @@ Plots the average activity of each cluster and detailed activity of a specified 
 ### `overlay_images`
 
 ```python
-def overlay_images(im_avg, binary_overlay, overlay_color=[255, 255, 0])
+ overlay_images(im_avg, binary_overlay, overlay_color=[255, 255, 0])
 ```
 
 Creates an overlay image by combining a grayscale background image with a binary overlay.
@@ -262,7 +262,7 @@ Creates an overlay image by combining a grayscale background image with a binary
 ### `plot_montage`
 
 ```python
-def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescale_intensity=False)
+plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescale_intensity=False)
 ```
 
 Creates a montage from a list of images, overlaying a binary image on a grayscale background.
@@ -284,7 +284,7 @@ Creates a montage from a list of images, overlaying a binary image on a grayscal
 ### plot_dff_activity
 
 ```python
-def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5, max_z=0.45, 
+plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5, max_z=0.45, 
     begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5, show_plots=True, 
     save_files = True, output_dir='./wizard_staff_outputs'):
 ```
@@ -324,7 +324,7 @@ The `pwc.py` file contains functions which calculate pairwise correlations betwe
 ### `run_pwc`
 
 ```python
-def run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2,
+run_pwc(group_name, metadata_path, results_folder, poly = False, pdeg = 4, lw = 1, lwp = 0.5, psz = 2,
     show_plots=False, save_files = False, output_dir = './wizard_staff_outputs')
 ```
 
@@ -355,7 +355,7 @@ Main wrapper function for performing the PairWise Correlation calculations. This
 ### `calc_pwc_mn`
 
 ```python
-def calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False)
+calc_pwc_mn(d_k_in_groups, d_dff, d_nspIDs, dff_cut=0.1, norm_corr=False)
 ```
 
 Calculates pairwise correlation means for groups.
@@ -379,7 +379,7 @@ Calculates pairwise correlation means for groups.
 ### `extract_intra_inter_nsp_neurons`
 
 ```python
-def extract_intra_inter_nsp_neurons(conn_matrix, nsp_ids)
+extract_intra_inter_nsp_neurons(conn_matrix, nsp_ids)
 ```
 
 Extracts intra-subpopulation and inter-subpopulation connections from a connectivity matrix.
@@ -399,7 +399,7 @@ Extracts intra-subpopulation and inter-subpopulation connections from a connecti
 ### `gen_mn_std_means`
 
 ```python
-def gen_mn_std_means(mean_pwc_dict)
+gen_mn_std_means(mean_pwc_dict)
 ```
 
 Calculates the mean and standard deviation of the means for each key in the input dictionary.
@@ -418,7 +418,7 @@ Calculates the mean and standard deviation of the means for each key in the inpu
 ### `gen_polynomial_fit`
 
 ```python
-def gen_polynomial_fit(data_dict, degree=4)
+gen_polynomial_fit(data_dict, degree=4)
 ```
 
 Generates a polynomial fit for the given data.
@@ -438,7 +438,7 @@ Generates a polynomial fit for the given data.
 ### `filter_group_keys`
 
 ```python
-def filter_group_keys(d_k_in_groups, d_dff, d_nspIDs)
+filter_group_keys(d_k_in_groups, d_dff, d_nspIDs)
 ```
 
 Filters group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
@@ -458,7 +458,7 @@ Filters group keys to ensure that only those with valid dF/F data and neuron IDs
 ### `plot_pwc_means`
 
 ```python
-def plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', 
+plot_pwc_means(d_mn_pwc, title, fname, output_dir, xlabel='Groups', ylabel='Mean Pairwise Correlation', 
     poly = False, lwp = 1, psz = 5, pdeg = 4, show_plots = True, save_files = False)
 ```
 
@@ -491,7 +491,7 @@ The `metadata.py` file contains utility functions for loading and processing met
 ### `load_and_process_metadata`
 
 ```python
-def load_and_process_metadata(metadata_path)
+load_and_process_metadata(metadata_path)
 ```
 
 Loads and preprocesses the metadata from a CSV file, cleaning file names by removing certain extensions.
@@ -509,7 +509,7 @@ Loads and preprocesses the metadata from a CSV file, cleaning file names by remo
 ### `append_metadata_to_dfs`
 
 ```python
-def append_metadata_to_dfs(metadata_path, **dataframes)
+append_metadata_to_dfs(metadata_path, **dataframes)
 ```
 
 Appends metadata to the given dataframes based on the filename match.
@@ -535,7 +535,7 @@ The `wizards-familiars.py` file provides common utility functions for categorizi
 ## categorize_files
 
 ```python
-def categorize_files(results_folder)
+categorize_files(results_folder)
 ```
 
 Categorizes files in the results folder based on their prefixes and extensions.
@@ -553,7 +553,7 @@ Categorizes files in the results folder based on their prefixes and extensions.
 ### load_and_filter_files
 
 ```python
-def load_and_filter_files(categorized_files, p_th=75, size_threshold=20000)
+load_and_filter_files(categorized_files, p_th=75, size_threshold=20000)
 ```
 
 Loads ΔF/F₀ data and applies spatial filtering to filter out noise events based on the size of neuron footprints.
@@ -574,7 +574,7 @@ Loads ΔF/F₀ data and applies spatial filtering to filter out noise events bas
 ### load_required_files
 
 ```python
-def load_required_files(categorized_files, raw_filename)
+load_required_files(categorized_files, raw_filename)
 ```
 
 Loads necessary files for a given raw filename from the categorized files.
@@ -593,7 +593,7 @@ Loads necessary files for a given raw filename from the categorized files.
 ### spatial_filtering
 
 ```python
-def spatial_filtering(cn_filter, p_th, size_threshold, cnm_A, cnm_idx, im_min, plot=True, silence = False)
+spatial_filtering(cn_filter, p_th, size_threshold, cnm_A, cnm_idx, im_min, plot=True, silence = False)
 ```
 
 Applies spatial filtering to components, generates montages, and optionally plots the results.

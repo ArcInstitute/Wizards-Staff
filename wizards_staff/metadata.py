@@ -1,21 +1,30 @@
+# import
+## batteries
+import logging
+## 3rd party
 import pandas as pd
 
-def load_and_process_metadata(metadata_path):
+# logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# functions
+def load_and_process_metadata(metadata_path: str) -> pd.DataFrame:
     """
     Loads and preprocesses the metadata CSV file.
 
     Args:
-        metadata_path (str): Path to the metadata CSV file.
+        metadata_path: Path to the metadata CSV file.
 
     Returns:
-        pd.DataFrame: Preprocessed metadata DataFrame.
+        Preprocessed metadata DataFrame.
     """
     metadata_df = pd.read_csv(metadata_path)
     metadata_df['Filename'] = metadata_df['Filename'].str.replace('.czi', '').str.replace('.tif', '')
 
     return metadata_df
 
-def append_metadata_to_dfs(metadata_path, **dataframes):
+def append_metadata_to_dfs(metadata_path: str, **dataframes) -> dict:
     """
     Appends metadata to the given dataframes based on the filename match.
 
@@ -25,7 +34,7 @@ def append_metadata_to_dfs(metadata_path, **dataframes):
                       (e.g., 'frpm', 'fwhm'), and each value should be the corresponding DataFrame.
 
     Returns:
-        dict: A dictionary of DataFrames with appended metadata.
+        A dictionary of DataFrames with appended metadata.
     """
     # Load the metadata CSV file
     metadata_df = load_and_process_metadata(metadata_path)

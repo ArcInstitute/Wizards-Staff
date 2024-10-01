@@ -2,7 +2,6 @@
 import os
 import sys
 import argparse
-from wizards_staff import run_all
 
 # argparse
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
@@ -30,6 +29,10 @@ def parse_args():
                         help='Set to True to save the output files')    
     parser.add_argument('--output-dir', type=str, default='lizard_wizard_outputs',
                         help='Directory to save the output files')
+    parser.add_argument('--threads', type=int, default=2,
+                        help='Number of parallel processes')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Debug mode')
     return parser.parse_args()
 
 ## main interface function
@@ -38,6 +41,7 @@ def main():
     args = parse_args()
 
     # run the pipeline
+    from wizards_staff.wizards.cauldron import run_all
     rise_time_df, fwhm_df, frpm_df, mask_metrics_df, silhouette_scores_df = run_all(
         args.results_folder, 
         args.metadata_path,
@@ -45,7 +49,9 @@ def main():
         size_threshold=args.size_threshold,
         show_plots=args.show_plots,
         save_files=args.save_files,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        threads=args.threads,
+        debug=args.debug
     )
 
     # write out data tables

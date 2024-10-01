@@ -1,8 +1,10 @@
 # import
 ## batteries
 import os
-import warnings
 import random
+import logging
+import warnings
+from typing import List, Tuple, Optional
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -14,36 +16,39 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
 from matplotlib import colors
 
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Functions
-def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75, 
-                              min_clusters=2, max_clusters=10, random_seed = 1111111,
-                              show_plots=True, save_files=False,
-                              clustering = False, dff_data = None, 
-                              output_dir='./wizard_staff_outputs'):
+def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np.ndarray, 
+                              sample_name: str, p_th: float=75, min_clusters: int=2, 
+                              max_clusters: int=10, random_seed: int=1111111,
+                              show_plots: bool=True, save_files: bool=False,
+                              clustering: bool=False, dff_dat: np.ndarray=None,
+                              output_dir: str='wizard_staff_outputs') -> Optional[np.ndarray]:
     """
     Plot the activity of neurons by overlaying the spatial footprints on a single image.
     
-    Parameters:
-    im_min (ndarray): Minimum intensity image for overlay.
-    cnm_A (ndarray): Spatial footprint matrix of neurons.
-    cnm_idx (ndarray): Indices of accepted components.
-    raw_filename (str): The raw filename of the image.
-    p_th (float): Percentile threshold for image processing.
-    min_clusters (int): The minimum number of clusters to try. Default is 2.
-    max_clusters (int): The maximum number of clusters to try. Default is 10.
-    random_seed (int): The seed for random number generation in K-means. Default is 1111111.
-    show_plots (bool): If True, shows the plots. Default is True.
-    save_files (bool): If True, saves the overlay image to the output directory. Default is True.
-    clustering (bool): If True, perform K-means clustering and color ROIs by cluster.
-    dff_data (ndarray): The dF/F data array, required if clustering=True.
-    output_dir (str): Directory where output files will be saved.
+    Args:
+        im_min: Minimum intensity image for overlay.
+        cnm_A: Spatial footprint matrix of neurons.
+        cnm_idx: Indices of accepted components.
+        sample_name: The sample name.
+        p_th: Percentile threshold for image processing.
+        min_clusters: The minimum number of clusters to try. Default is 2.
+        max_clusters: The maximum number of clusters to try. Default is 10.
+        random_seed: The seed for random number generation in K-means. Default is 1111111.
+        show_plots: If True, shows the plots. Default is True.
+        save_files: If True, saves the overlay image to the output directory. Default is True.
+        clustering: If True, perform K-means clustering and color ROIs by cluster.
+        dff_dat: The dF/F data array, required if clustering=True.
+        output_dir: Directory where output files will be saved.
     
     Returns:
-    overlay_image (ndarray): The combined overlay image.
+        overlay_image: The combined overlay image.
     """
     # Load the minimum intensity image
-    im_min = imread(im_min)
     im_shape = im_min.shape
     im_sz = [im_shape[0], im_shape[1]]
     
@@ -54,9 +59,13 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
     cmap = plt.get_cmap('nipy_spectral')
     norm = colors.Normalize(vmin=0, vmax=len(cnm_idx))
 
-    if clustering and dff_data is not None:
+    if clustering and dff_dat is not None:
         # Perform clustering on the filtered data
-        data_t = dff_data[cnm_idx]
+        data_t = dff_dat[cnm_idx]
+
+        # If empty, return None  # TODO: check with Jesse about this
+        if data_t.shape[0] == 0:
+            return None
 
         best_silhouette_score = -1
         best_num_clusters = 2
@@ -66,12 +75,14 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         for num_clusters in range(min_clusters, max_clusters + 1):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UserWarning)
-
                 # Perform K-means clustering
                 centroids, labels = kmeans2(data_t, num_clusters, seed = random_seed)
             
             # Calculate silhouette score
-            silhouette_avg = silhouette_score(data_t, labels)
+            if len(np.unique(labels)) > 1:
+                silhouette_avg = silhouette_score(data_t, labels)
+            else:
+                silhouette_avg = -1
 
             # Update if this is the best silhouette score
             if silhouette_avg > best_silhouette_score:
@@ -79,6 +90,11 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
                 best_num_clusters = num_clusters
                 best_labels = labels
         
+        # Return None if no clusters are found
+        if best_labels is None:
+            logger.warning('No clusters found. No overlay image will be generated.')
+            return None
+
         # Assign colors to clusters
         unique_clusters = np.unique(best_labels)
         cluster_colors = {}
@@ -86,7 +102,6 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
             color_idx = random.uniform(0.0, 1.0)  # Random float between 0 and 1
             color = np.array(cmap(color_idx)[:3]) * 255  # Select a random color from the full colormap
             cluster_colors[cluster] = color
-
 
     # Apply spatial filtering and generate the overlay image
     for i, idx in enumerate(cnm_idx):
@@ -99,7 +114,7 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         im_thr[im_thr >= thr] = 1
 
         # Determine the color based on clustering or use the default colormap
-        if clustering and dff_data is not None:
+        if clustering and dff_dat is not None:
             cluster = best_labels[i]
             color = cluster_colors[cluster]
         else:
@@ -116,7 +131,7 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         plt.figure(figsize=(10, 10))
         plt.imshow(im_min, cmap='gray')
         plt.imshow(overlay_image, alpha=0.6)  # Overlay with transparency
-        if clustering and dff_data is not None:
+        if clustering and dff_dat is not None:
             plt.title('Overlay of Clustered Neuron Activities')
         else:
             plt.title('Overlay of Neuron Activities')
@@ -135,10 +150,10 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         os.makedirs(output_dir_pngs, exist_ok=True)
         
         # Define the file path
-        if clustering and dff_data is not None:
-            overlay_image_path = os.path.join(output_dir_pngs, f'{raw_filename}_clustered_activity_overlay.png')
+        if clustering and dff_dat is not None:
+            overlay_image_path = os.path.join(output_dir_pngs, f'{sample_name}_clustered-activity-overlay.png')
         else:
-            overlay_image_path = os.path.join(output_dir_pngs, f'{raw_filename}_activity_overlay.png')
+            overlay_image_path = os.path.join(output_dir_pngs, f'{sample_name}_activity-overlay.png')
         
         # Create a new figure for saving
         plt.figure(figsize=(10, 10))
@@ -149,26 +164,38 @@ def plot_spatial_activity_map(im_min, cnm_A, cnm_idx, raw_filename, p_th=75,
         # Save the overlay image
         plt.savefig(overlay_image_path, bbox_inches='tight', pad_inches=0)
         plt.close()
-        # print(f'Overlay image saved to {overlay_image_path}')
     
 
-def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wizard_staff_outputs', 
-                        min_clusters=2, max_clusters=10, random_seed=1111111, show_plots=True, save_files = True):
+def plot_kmeans_heatmap(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_name: str, 
+                        output_dir: str='wizard_staff_outputs', min_clusters: int=2, 
+                        max_clusters: int=10, random_seed: int=1111111, show_plots: bool=True, 
+                        save_files: bool=True) -> Tuple[Optional[float], Optional[int]]:
     """
     Plot K-means clustering of the given data and outputs synchronization metrics and clustering information to a spreadsheet.
 
-    Parameters:
-    dff_data (np.ndarray): The dF/F data array.
-    filtered_idx (np.ndarray): The indices of the data to be filtered.
-    min_clusters (int): The minimum number of clusters to try. Default is 2.
-    max_clusters (int): The maximum number of clusters to try. Default is 10.
-    random_seed (int): The seed for random number generation in K-means. Default is 1111111.
-    raw_filename (str): The raw filename of the data.
-    output_dir (str): Directory where output files will be saved.
+    Args:
+        dff_dat: The dF/F data array.
+        filter_idx: The indices of the data to be filtered.
+        sample_name: The name of the sample.
+        output_dir: Directory where output files will be saved.
+        min_clusters: The minimum number of clusters to try. Default is 2.
+        max_clusters: The maximum number of clusters to try. Default is 10.
+        random_seed: The seed for random number generation in K-means. Default is 1111111.
+        show_plots: If True, shows the plots. Default is True.
+        save_files: If True, saves the plot and clustering information to the output directory. Default is True.
+
+    Returns:
+        best_silhouette_score: The silhouette score of the best clustering.
+        best_num_clusters: The number of clusters in the best clustering.
     """
     # Filter the data
-    data_t = dff_data[filtered_idx]
+    data_t = dff_dat[filtered_idx]
 
+    # If empty, return None  # TODO: check with Jesse about this
+    if data_t.shape[0] == 0:
+        return None, None
+
+    # Init params
     best_silhouette_score = -1
     best_num_clusters = min_clusters
     best_labels = None
@@ -176,7 +203,7 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
 
     # Try K-means with different numbers of clusters
     for num_clusters in range(min_clusters, max_clusters + 1):
-            # Suppress warnings of empty clusters from k-means clustering
+        # Suppress warnings of empty clusters from k-means clustering
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -184,9 +211,10 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
             centroids, labels = kmeans2(data_t, num_clusters, seed=random_seed)
         
         # Calculate silhouette score as a measure of clustering quality
-        silhouette_avg = silhouette_score(data_t, labels)
-            
-        # print(f'Clusters: {num_clusters}, Silhouette Score: {silhouette_avg}')
+        if len(np.unique(labels)) > 1:
+            silhouette_avg = silhouette_score(data_t, labels)
+        else:
+            silhouette_avg = -1
 
         # If the sillhouette score is better, update the best values
         if silhouette_avg > best_silhouette_score:
@@ -195,6 +223,11 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
             best_labels = labels
             sorted_indices = np.argsort(labels)
             best_sorted_data_t = data_t[sorted_indices, :]
+
+    # If just one cluster is found, return None
+    if best_sorted_data_t is None:
+        logger.warning('Only one cluster found. No kmeans heatmap plot will be generated.')
+        return None, None
 
     # Plotting the best result
     plt.figure(figsize=(14, 14))
@@ -215,21 +248,31 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
     cluster_offset = 0
     for cluster_idx in range(best_num_clusters):
         num_cells_in_cluster = np.sum(best_labels == cluster_idx)
-        rect = patches.Rectangle((0, cluster_offset), 50, num_cells_in_cluster, linewidth=1, edgecolor='none', facecolor=cmap[cluster_idx])
-        ax2.text(10, cluster_offset + num_cells_in_cluster / 2, str(cluster_idx), color='k', weight='bold')
+        rect = patches.Rectangle(
+            (0, cluster_offset), 50, num_cells_in_cluster, 
+            linewidth=1, 
+            edgecolor='none', 
+            facecolor=cmap[cluster_idx]
+        )
+        # axis2 
+        ax2.text(
+            10, cluster_offset + num_cells_in_cluster / 2, str(cluster_idx), 
+            color='k', 
+            weight='bold'
+        )
         ax2.add_patch(rect)
+        ax2.text(10, -5, '↓ Cluster ID', fontsize=10)
         cluster_offset += num_cells_in_cluster
-
-    ax2.text(10, -5, '↓ Cluster ID', fontsize=10)
 
     # Set axis labels
     ax1.set_xlabel('Frame')
-    ax2.set_xlabel('Frame')
     ax1.set_ylabel('ROI')
-    ax2.set_ylabel('ROI')
+    if best_sorted_data_t is not None:
+        ax2.set_xlabel('Frame')
+        ax2.set_ylabel('ROI')
 
     # Save the plot
-    if save_files==True:
+    if save_files == True:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         output_dir_pngs = os.path.join(output_dir, 'kmeans_heatmap_plots')
@@ -238,12 +281,11 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
         os.makedirs(output_dir_pngs, exist_ok=True)
 
         # Save the figure
-        fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_kmeans_clustering_plot.png')
+        fig_path = os.path.join(output_dir_pngs, f'{sample_name}_kmeans-clustering-plot.png')
         plt.savefig(fig_path, bbox_inches='tight')
-    # print(f'Plot saved as {raw_filename}_kmeans_clustering_plot.png')
 
     # Display the plot
-    if show_plots==True:
+    if show_plots == True:
         plt.show()
     else:
         plt.close()
@@ -266,28 +308,36 @@ def plot_kmeans_heatmap(dff_data, filtered_idx, raw_filename, output_dir='./wiza
     if save_files==True:
         output_dir_csv = os.path.join(output_dir, 'kmeans_heatmap_csv')
         os.makedirs(output_dir_csv, exist_ok=True)
-        csv_path = os.path.join(output_dir_csv, f'{raw_filename}_clustering_info.csv')
+        csv_path = os.path.join(output_dir_csv, f'{sample_name}_clustering-info.csv')
         df.to_csv(csv_path, index=False)
 
     return best_silhouette_score, best_num_clusters
 
-def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, max_clusters=10, random_seed=1111111, 
-                          norm=False, show_plots=True, save_files = True, output_dir='./wizard_staff_outputs'):
+def plot_cluster_activity(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_name: str, 
+                          min_clusters: int=2, max_clusters: int=10, random_seed: int=1111111, 
+                          norm: bool=False, show_plots: bool=True, save_files: bool=True, 
+                          output_dir: str='wizard_staff_outputs') -> None:
     """
     Plot the average activity of each cluster and the average activity of a specified cluster with std.
 
     Parameters:
-    dff_data (np.ndarray): The dF/F data array.
-    filtered_idx (np.ndarray): The indices of the data to be filtered.
-    num_clusters (int): The number of clusters. Default is 5.
-    cluster_id (int): The specific cluster ID to plot the average activity and std. Default is 2.
-    random_seed (int): The seed for random number generation in K-means. Default is 1111111.
-    norm (bool): Whether to normalize the data. Default is False.
-    raw_filename (str): The raw filename of the data. 
-    output_dir (str): Directory where output files will be saved.
+        dff_dat: The dF/F data array.
+        filtered_idx: The indices of the data to be filtered.
+        sample_name: The name of the sample.
+        min_clusters: The minimum number of clusters to try. Default is 2.
+        max_clusters: The maximum number of clusters to try. Default is 10.
+        random_seed: The seed for random number generation in K-means. Default is 1111111.
+        norm: Whether to normalize the data. Default is False.
+        show_plots: If True, shows the plots. Default is True.
+        save_files: If True, saves the plot to the output directory. Default is True.
+        output_dir: Directory where output files will be saved.
     """
     # Filter the data
-    data_t = dff_data[filtered_idx]
+    data_t = dff_dat[filtered_idx]
+
+    # If empty, return None  # TODO: check with Jesse about this
+    if data_t.shape[0] == 0:
+        return None
 
     # Perform K-means clustering
     best_silhouette_score = -1
@@ -305,7 +355,10 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
             centroids, labels = kmeans2(data_t, num_clusters, seed=random_seed)
         
         # Calculate silhouette score as a measure of clustering quality
-        silhouette_avg = silhouette_score(data_t, labels)
+        if len(np.unique(labels)) > 1:
+            silhouette_avg = silhouette_score(data_t, labels)
+        else:
+            silhouette_avg = -1
             
         # If the sillhouette score is better, update the best values
         if silhouette_avg > best_silhouette_score:
@@ -322,13 +375,15 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
         cluster_mean = np.mean(np.squeeze(data_t[js, :]), axis=0)
         cluster_means.append(np.mean(cluster_mean))
     
-    cluster_id = np.argmax(cluster_means)  # Select the cluster with the highest mean activity
+    # Select the cluster with the highest mean activity
+    cluster_id = np.argmax(cluster_means)  
     
     def normalize(trace):
         """Normalizes the given trace to be between 0 and 1."""
         return (trace - np.min(trace)) / (np.max(trace) - np.min(trace))
 
     f = plt.figure(figsize=(20, 5))
+    # Plot the average activity of each cluster
     plt.subplot(121)
 
     for Ki in range(best_num_clusters):
@@ -348,6 +403,7 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
 
     p.yaxis.set_major_locator(MaxNLocator(integer=True))
 
+    # Plot the average activity of the selected cluster with std
     plt.subplot(122)
 
     iis = np.where(best_labels == cluster_id)[0]
@@ -379,7 +435,7 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
         os.makedirs(output_dir_pngs, exist_ok=True)
 
         # Save the figure
-        fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_cluster_activity_plot.png')
+        fig_path = os.path.join(output_dir_pngs, f'{sample_name}_cluster-activity-plot.png')
         plt.savefig(fig_path, bbox_inches='tight')
     
     if show_plots:
@@ -387,17 +443,18 @@ def plot_cluster_activity(dff_data, filtered_idx, raw_filename, min_clusters=2, 
     else:
         plt.close()
 
-def overlay_images(im_avg, binary_overlay, overlay_color=[255, 255, 0]):
+def overlay_images(im_avg: np.ndarray, binary_overlay: np.ndarray, overlay_color: list=[255, 255, 0]
+                   ) -> np.ndarray:
     """
     Create an overlay image with a specific color for the binary overlay and gray for the background.
 
-    Parameters:
-    im_avg (ndarray): The average image (grayscale).
-    binary_overlay (ndarray): The binary overlay image.
-    overlay_color (list): The RGB color for the binary overlay.
+    Args:
+        im_avg: The average image (grayscale).
+        binary_overlay: The binary overlay image.
+        overlay_color: The RGB color for the binary overlay.
 
     Returns:
-    overlay_image (ndarray): The combined overlay image.
+        overlay_image: The combined overlay image.
     """
     # Normalize the grayscale image to the range [0, 255]
     im_avg_norm = (255 * (im_avg - np.min(im_avg)) / (np.max(im_avg) - np.min(im_avg))).astype(np.uint8)
@@ -414,20 +471,22 @@ def overlay_images(im_avg, binary_overlay, overlay_color=[255, 255, 0]):
     
     return combined_image
 
-def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescale_intensity=False):
+def plot_montage(images: List[np.ndarray], im_avg: np.ndarray, grid_shape: Tuple, 
+                 overlay_color: list=[255, 255, 0], rescale_intensity: bool=False
+                 ) -> np.ndarray:
     """
     Creates a montage from a list of images arranged in a specified grid shape,
     with an overlay color applied to binary images and gray background.
 
-    Parameters:
-    images (list of ndarray): List of binary images to be arranged in a montage.
-    im_avg (ndarray): The average image (grayscale) for background.
-    grid_shape (tuple): Shape of the grid for arranging the images (rows, columns).
-    overlay_color (list): The RGB color for the binary overlay.
-    rescale_intensity (bool): Flag to indicate if image intensity should be rescaled. Default is False.
+    Args:
+        images: List of binary images to be arranged in a montage.
+        im_avg: The average image (grayscale) for background.
+        grid_shape: Shape of the grid for arranging the images (rows, columns).
+        overlay_color: The RGB color for the binary overlay.
+        rescale_intensity: Flag to indicate if image intensity should be rescaled. Default is False.
 
     Returns:
-    montage (ndarray): Montage image.
+        montage: Montage image.
     """
     # Calculate the shape of the montage grid
     img_height, img_width = im_avg.shape[:2]
@@ -446,28 +505,30 @@ def plot_montage(images, im_avg, grid_shape, overlay_color=[255, 255, 0], rescal
 
     return montage
 
-def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5, max_z=0.45, 
-                      begin_tp = 0, end_tp = -1, n_start = 0, n_stop = -1, dff_bar = 1, lw=.5,
-                      show_plots=True, save_files=True, output_dir='./wizard_staff_outputs'):
+def plot_dff_activity(dff_dat: np.ndarray, cnm_idx: np.array, frate: int, sample_name: str, 
+                      sz_per_neuron: float=0.5, max_z: float=0.45, begin_tp: int=0, 
+                      end_tp: int=-1, n_start: int=0, n_stop: int=-1, dff_bar: float=1, 
+                      lw: float=0.5, show_plots: bool=True, save_files: bool=True, 
+                      output_dir: str='wizard_staff_outputs') -> None:
     """
     Plots the activity data of neurons within a specified time range.
     
     Parameters:
-    dff_dat (ndarray): Activity data matrix with neurons as rows and time points as columns.
-    cnm_idx (array): Array of neuron IDs corresponding to the rows of dff_dat.
-    frate (int): Frames per second of the data.
-    raw_filename (str): The filename of the data. Needed for saving the plot.
-    sz_per_neuron (float): Size of each neuron in the plot.
-    max_z (float): Maximum ΔF/F₀ intensity for scaling the plot.
-    begin_tp (int): Starting time point for the plot.
-    end_tp (int): Ending time point for the plot.
-    n_start (int): Index of the first cell to plot.
-    n_stop (int): Index of the last cell to plot.
-    dff_bar (float): Height of the ΔF/F₀ scale bar.
-    lw (float): Line width of the lines drawn in the plot.
-    show_plots (bool): If True, shows the plots. Default is True.
-    save_files (bool): If True, saves the plot to the output directory. Default is True.
-    output_dir (str): Directory where the plot will be saved.
+        dff_dat: Activity data matrix with neurons as rows and time points as columns.
+        cnm_idx: Array of neuron IDs corresponding to the rows of dff_dat.
+        frate: Frames per second of the data.
+        sample_name: The filename of the data. Needed for saving the plot.
+        sz_per_neuron: Size of each neuron in the plot.
+        max_z: Maximum ΔF/F₀ intensity for scaling the plot.
+        begin_tp: Starting time point for the plot.
+        end_tp: Ending time point for the plot.
+        n_start: Index of the first cell to plot.
+        n_stop: Index of the last cell to plot.
+        dff_bar: Height of the ΔF/F₀ scale bar.
+        lw: Line width of the lines drawn in the plot.
+        show_plots: If True, shows the plots. Default is True.
+        save_files: If True, saves the plot to the output directory. Default is True.
+        output_dir: Directory where the plot will be saved.
     """
     # Ensure valid end_tp
     end_tp = end_tp if end_tp >= 0 else dff_dat.shape[1]
@@ -530,7 +591,7 @@ def plot_dff_activity(dff_dat, cnm_idx, frate, raw_filename, sz_per_neuron = 0.5
         os.makedirs(output_dir_pngs, exist_ok=True)
 
         # Save the figure
-        fig_path = os.path.join(output_dir_pngs, f'{raw_filename}_dff_activity_plot.png')
+        fig_path = os.path.join(output_dir_pngs, f'{sample_name}_dff-activity-plot.png')
         plt.savefig(fig_path, bbox_inches='tight')
     
     if show_plots:
