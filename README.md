@@ -148,7 +148,16 @@ Processes the results folder, computes metrics such as rise time, FWHM, FRPM, an
 ---
 
 
-# dev
+# Development
+
+## Testing
+
+```bash
+python -m unittest tests/
+```
+
+
+## Misc
 
 ```bash
 wizards-staff \
