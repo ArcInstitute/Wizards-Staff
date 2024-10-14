@@ -156,7 +156,6 @@ Processes the results folder, computes metrics such as rise time, FWHM, FRPM, an
 python -m unittest tests/
 ```
 
-
 ## Misc
 
 ```bash
@@ -164,3 +163,8 @@ wizards-staff \
   /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d \
   /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d/metadata.csv
 ```
+
+## TODO
+
+* Benchling integration
+  * https://arcinstitutetest.benchling.com/arcinstitute/f/lib_mNL9NKAy-test_sneha/etr_WX8kQX2u-test-entry-_sneha/edit

@@ -2,7 +2,7 @@
 tmp/
 test/
 .env
-dev.ipynb
+notebooks/dev/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

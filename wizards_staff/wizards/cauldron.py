@@ -1,6 +1,7 @@
 # import
 ## batteries
 import os
+import sys
 import logging
 from typing import Tuple
 from functools import partial
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3, 
             percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
             max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
-            poly: bool=False, size_threshold: int=20000, show_plots: bool=True, 
+            poly: bool=False, size_threshold: int=20000, show_plots: bool=False, 
             save_files: bool=False, output_dir: str='wizard_staff_outputs', 
             threads: int=2, debug: bool=False, **kwargs) -> None:
     """
@@ -53,6 +54,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
     """
     # Check if the output directory exists
     if save_files:
+        orb._logger.info(f'Saving output to: {output_dir}')
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         # Create the output directory if it does not exist
@@ -79,7 +81,10 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
     if debug or threads == 1:
         orb._logger.info(desc)
         for shard in orb.shatter():
-            func(shard)
+            try:
+                func(shard)
+            except Exception as e:
+                print(f'WARNING: {e}', file=sys.stderr)
     else:
         with ProcessPoolExecutor(max_workers=threads) as executor:
             logging.disable(logging.INFO)
@@ -93,7 +98,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
                     orb._shards[updated_shard.sample_name] = updated_shard
                 except Exception as e:
                     # Handle any exception that occurred during the execution
-                    print(f'Exception occurred: {e}')
+                    print(f'WARNING: {e}', file=sys.stderr)
             # Re-enable logging
             logging.disable(logging.NOTSET)
 

@@ -72,6 +72,7 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
+    quiet: bool = False
     _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: pd.DataFrame = field(default=None, init=False)
     _fwhm_data: pd.DataFrame = field(default=None, init=False)
@@ -126,7 +127,8 @@ class Orb:
                         Shard(
                             sample_name,
                             metadata=self.metadata[self.metadata['Sample'] == sample_name],
-                            files={}
+                            files={},
+                            quiet=self.quiet
                         )
                     )
                     shard.files[item_name] = (file_path, data_info['loader'])
@@ -142,7 +144,7 @@ class Orb:
                 except KeyError:
                     # no sample?
                     missing_samples.append(sample)
-            if len(missing_samples) > 0:
+            if len(missing_samples) > 0 and not self.quiet:
                 missing_samples = ', '.join(missing_samples)
                 msg = f"WARNING: No '{item_name}' files found for samples: {missing_samples}"
                 print(msg, file=sys.stderr)

@@ -30,7 +30,8 @@ class Shard:
     """
     sample_name: str
     metadata: pd.DataFrame
-    files: dict
+    files: Dict[str, Tuple[str, Callable[[str], Any]]] 
+    quiet: bool = False
     _input_files: pd.DataFrame = field(default=None, init=False)
     _input_items: dict = field(default_factory=dict)
     _logger: Optional[logging.Logger] = field(default=None, init=False)
@@ -66,7 +67,7 @@ class Shard:
                     )
                     return None
             else:
-                msg = f"Input input'{item_name}' not found for '{self.sample_name}'"
+                msg = f"Input '{item_name}' not found for '{self.sample_name}'"
                 if req:
                     raise ValueError(msg)
                 self._logger.warning(msg)
