@@ -153,7 +153,7 @@ Processes the results folder, computes metrics such as rise time, FWHM, FRPM, an
 ## Testing
 
 ```bash
-python -m unittest tests/
+pytest -s tests/
 ```
 
 ## Misc

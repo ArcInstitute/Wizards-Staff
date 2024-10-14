@@ -111,7 +111,7 @@ def main():
     conn = db.connect()
     # query db
     DF = get_benchling_entities(conn, "384WP002") #"Sph08302024_Lot_Test_Plate1")
-    print(DF);
+    print(DF)
     # remove connection
     conn.close()
     
