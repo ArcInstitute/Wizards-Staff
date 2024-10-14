@@ -1,7 +1,6 @@
 # imports
 import os
 import pytest
-from unittest.mock import patch, MagicMock, mock_open
 import pandas as pd
 import numpy as np
 from tifffile import imread
@@ -14,6 +13,9 @@ def sample_name():
 
 @pytest.fixture
 def mock_metadata(sample_name):
+    """
+    Test metadata for the Shard object
+    """
     return pd.DataFrame({
         'Sample': [sample_name],
         'Well': ['A1'],
@@ -22,6 +24,9 @@ def mock_metadata(sample_name):
 
 @pytest.fixture
 def mock_files(setup_test_data, sample_name):
+    """
+    Set the test files that are expected to be present in the test data
+    """
     input_dir = setup_test_data
     return {
         'dff_dat': (
@@ -44,16 +49,25 @@ def mock_files(setup_test_data, sample_name):
 
 @pytest.fixture
 def shard(sample_name, mock_metadata, mock_files, setup_test_data):
+    """
+    Initialize a Shard object with the test data
+    """
     return Shard(sample_name, mock_metadata, mock_files)
 
 # Test to ensure the Shard object is initialized correctly
 def test_init(shard, sample_name, mock_metadata, mock_files):
+    """
+    Assess the initialization of the Shard object
+    """
     assert shard.sample_name == sample_name
     pd.testing.assert_frame_equal(shard.metadata, mock_metadata)
     assert shard.files == mock_files
 
 # Test the get_input method of the Shard class
 def test_get_input(shard, mock_files):
+    """
+    Test the get_input method of the Shard class
+    """
     for file_type in mock_files.keys():
         result = shard.get_input(file_type)
         assert isinstance(result, np.ndarray)
