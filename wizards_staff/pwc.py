@@ -61,7 +61,11 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     # Iterate over each shard
     for shard in orb.shatter():
         # Create a dictionary of dff_dat
-        d_dff[shard.sample_name] = shard.get_input('dff_dat', req=True) 
+        try:
+            d_dff[shard.sample_name] = shard.get_input('dff_dat', req=True) 
+        except ValueError:
+            orb._logger.error(f'No dff_dat found for {shard.sample_name}. Skipping...')
+            continue
 
         # Conduct spatial filtering
         filtered_idx = spatial_filtering(

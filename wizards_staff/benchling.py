@@ -25,7 +25,7 @@ def BL_create_engine() -> Engine:
     tenant = 'TEST' if os.environ.get('PY_CONFIG_ACTIVE') == 'TEST' else 'PROD'
     hostname = 'test' if tenant == 'TEST' else ''
 
-    # check if db username and password are set
+    # Check if db username and password are set
     if os.environ.get(f'BENCHLING_{tenant}_DB_USERNAME') is None:
         logging.error(f'No Benchling {tenant} database username found in environment variables')
         sys.exit(1)
@@ -33,7 +33,7 @@ def BL_create_engine() -> Engine:
         logging.error(f'No Benchling {tenant} database password found in environment variables')
         sys.exit(1)
 
-    # create db string
+    # Create db string
     db_string = "postgresql://{user}:{password}@{host}:{port}/{dbname}"
     db_string = db_string.format(
         host=f'postgres-warehouse.arcinstitute{hostname}.benchling.com',
@@ -46,21 +46,33 @@ def BL_create_engine() -> Engine:
     return create_engine(db_string)
 
 def get_benchling_entities(conn: Connection, plate_name: str = None) -> pd.DataFrame:
-    # Define the table
+    """
+    Query the Benchling database for organoid entities.
+    Using the plate name, the function will return the organoid entities associated with the plate.
+    Args:
+        conn: SQLAlchemy connection object
+        plate_name: str, name of the plate to query
+    Returns:
+        DF: organoid entities associated with the plate
+    """
+    # Define the tables
     organoid = Table('organoidsphereiod_lot$raw')
+    cc = Table('container_content$raw')
+    container = Table('container$raw')
     plate = Table('plate$raw')
-    well = Table('well$raw')
 
-    # plate => well => organoid
+    # Define the query
     query = Query \
         .from_(plate) \
         .where(plate["name"] == plate_name) \
-        .join(well) \
-        .on(plate["id"] == well["plate_id$"]) \
+        .join(container) \
+        .on(plate["id"] == container["plate_id"]) \
+        .join(cc) \
+        .on(container["id"] == cc["container_id"]) \
         .join(organoid) \
-        .on(well["well_entity"] == organoid["id"]) \
+        .on(cc["entity_id"] == organoid["id"]) \
         .select(
-            well["name$"].as_("well_name"), 
+            container["name"].as_("well_name"),
             organoid["name$"].as_("organoid_name"),
             organoid["days_in_culture"],
             organoid["reprogrammingdifferentiation_method"],
@@ -92,18 +104,17 @@ def get_benchling_entities(conn: Connection, plate_name: str = None) -> pd.DataF
     # Return the DataFrame
     return DF
 
-
 def main():
     # create db engine
     db = BL_create_engine()
     # create db connection
     conn = db.connect()
     # query db
-    DF = get_benchling_entities(conn, "Sph08302024_Lot_Test_Plate1")
+    DF = get_benchling_entities(conn, "384WP002") #"Sph08302024_Lot_Test_Plate1")
+    print(DF)
     # remove connection
     conn.close()
     
-
 if __name__ == '__main__':
     load_dotenv()
     main()

@@ -148,10 +148,35 @@ Processes the results folder, computes metrics such as rise time, FWHM, FRPM, an
 ---
 
 
-# dev
+# Development
+
+## Testing
+
+Notes:
+* The data dataset will be downloaded from GCP, unless you have a local copy
+  * To create a local copy, run `python wizards_staff/gcp.py`
+
+To run all tests:
+
+```bash
+pytest -s tests/
+```
+
+To run specific tests (e.g., Shard):
+
+```bash
+pytest -s tests/test_Shard.py
+```
+
+## Misc
 
 ```bash
 wizards-staff \
   /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d \
   /large_storage/multiomics/projects/lizard_wizard/test_output/moldev-3d/metadata.csv
 ```
+
+## TODO
+
+* Benchling integration
+  * https://arcinstitutetest.benchling.com/arcinstitute/f/lib_mNL9NKAy-test_sneha/etr_WX8kQX2u-test-entry-_sneha/edit

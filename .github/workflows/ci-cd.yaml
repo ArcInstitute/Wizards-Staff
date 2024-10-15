@@ -1,0 +1,42 @@
+on:
+  push:
+    branches: [main, master, nick_dev3*]
+  pull_request:
+    branches: [main, master]
+
+name: wizards-staff
+
+env:
+  APP: wizards-staff
+  TAG_VERSION: 0.1.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - id: "Google-Auth"
+      name: "Authenticate to Google Cloud"
+      uses: "google-github-actions/auth@v1"
+      with:
+        credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11' 
+
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies including dev-dependencies
+      run: |
+        poetry install
+
+    - name: Run tests with pytest
+      run: poetry run pytest
