@@ -46,8 +46,8 @@ def download_gcp_dir(bucket_name: str, prefix: str, outdir: str=None):
 def main():
     output_dir = download_gcp_dir(
         'arc-genomics-test-data', 
-        'wizards-staff/Calcium_AAV-GCAMP_6wk_20240416/',
-        outdir = 'GCP_DL_TEST'
+        os.path.join('wizards-staff', 'Calcium_AAV-GCAMP_6wk_20240416'),
+        outdir = os.path.join('tests', 'data', 'Calcium_AAV-GCAMP_6wk_20240416')
     )
 
 if __name__ == '__main__':

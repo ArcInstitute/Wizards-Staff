@@ -152,8 +152,20 @@ Processes the results folder, computes metrics such as rise time, FWHM, FRPM, an
 
 ## Testing
 
+Notes:
+* The data dataset will be downloaded from GCP, unless you have a local copy
+  * To create a local copy, run `python wizards_staff/gcp.py`
+
+To run all tests:
+
 ```bash
 pytest -s tests/
+```
+
+To run specific tests (e.g., Shard):
+
+```bash
+pytest -s tests/test_Shard.py
 ```
 
 ## Misc
