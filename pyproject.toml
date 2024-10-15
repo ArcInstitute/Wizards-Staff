@@ -37,6 +37,7 @@ python-dotenv = "^1.0.1"
 
 [tootl.poetry.dev-dependencies]
 google-cloud-storage = "^2.18.2"
+pytest = "^8.3.3"
 
 # Pip dependencies
 [tool.poetry.extras]
