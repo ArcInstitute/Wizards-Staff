@@ -18,20 +18,25 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11' 
-
     - id: "Google-Auth"
       name: "Authenticate to Google Cloud"
       uses: "google-github-actions/auth@v1"
       with:
         credentials_json: "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}"
 
-    - name: Install dependencies
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11' 
+
+    - name: Install Poetry
       run: |
-        pip install . 
+        curl -sSL https://install.python-poetry.org | python3 -
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies including dev-dependencies
+      run: |
+        poetry install --with dev
 
     - name: Run tests with pytest
-      run: pytest -s
+      run: poetry run pytest
