@@ -133,7 +133,13 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     Returns:
         shard: The updated shard object
     """    
-    logger.info(f'Processing shard: {shard.sample_name}')
+    shard._logger.info(f'Processing shard: {shard.sample_name}')
+
+    # Check for required inputs
+    for key in ['dff_dat', 'minprojection', 'cnm_A']:
+        if not shard.has_file(key):
+            shard._logger.warning(f'Missing required input: {key}; skipping {shard.sample_name}')
+            return shard
 
     # Apply spatial filtering to the data to remove noise
     filtered_idx = shard.spatial_filtering(
@@ -201,7 +207,7 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         })
 
     # Calculate mask metrics and store them      
-    if shard.get_input('mask') is not None:
+    if shard.has_file('mask'):
         mask_metrics = shard.calc_mask_shape_metrics()
     shard._mask_metrics_data.append({
         'Sample': shard.sample_name,
