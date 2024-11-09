@@ -201,6 +201,17 @@ class Orb:
             setattr(self, attr_name, attr)  
         return attr
 
+    #-- check input --#
+    def has_input(self, data_item_name: str) -> bool:
+        """
+        Checks if the input data item exists.
+        Args:
+            data_item_name: Name of the data item.
+        Returns:
+            True if the input data item exists.
+        """
+        return any(self.input_files["DataItem"] == data_item_name)
+
     #-- save data --#
     def save_results(self, outdir: str, result_names: 
                   list=["rise_time_data", "fwhm_data", "frpm_data", 

@@ -51,6 +51,12 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     # d_dff is a dictionary of dff_dat
     # d_nspIDs is a dictionary where its the filtered indices
 
+    # Check for required inputs
+    for req_input in ['dff_dat', 'cnm_A', 'cnm_idx', 'minprojection']:
+        if not orb.has_input(req_input):
+            orb._logger.warning(f'No {req_input} found. Skipping pairwise correlation analysis...')
+            return None
+
     # Group the metadata by the specified column
     if group_name not in orb.metadata.columns:
         raise ValueError(f'Column "{group_name}" is not a metadata column.')
