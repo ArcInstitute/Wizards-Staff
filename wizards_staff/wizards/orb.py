@@ -4,10 +4,9 @@ import os
 import sys
 import logging
 import pickle
-from typing import Callable, Dict, Any, Generator, Tuple, List, Optional
+from typing import Dict, Any, Generator, Tuple, List, Optional
 from dataclasses import dataclass, field
-from functools import partial, wraps
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import wraps
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -200,6 +199,17 @@ class Orb:
             # Cache the result
             setattr(self, attr_name, attr)  
         return attr
+
+    #-- check input --#
+    def has_input(self, data_item_name: str) -> bool:
+        """
+        Checks if the input data item exists.
+        Args:
+            data_item_name: Name of the data item.
+        Returns:
+            True if the input data item exists.
+        """
+        return any(self.input_files["DataItem"] == data_item_name)
 
     #-- save data --#
     def save_results(self, outdir: str, result_names: 

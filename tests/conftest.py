@@ -9,15 +9,15 @@ def setup_test_data():
     Fixture to download test data from GCP bucket before any tests are run.
     This fixture has session scope, meaning it will run once per test session.
     """
-    # load environment variables
+    # Load env variables
     load_dotenv()  
     
-    # Set up your bucket information (you might want to use environment variables or hard code them)
+    # Bucket information
     bucket_name = 'arc-genomics-test-data'
     run_name = 'Calcium_AAV-GCAMP_6wk_20240416'
     prefix = os.path.join('wizards-staff', run_name)
 
-    # Local direct
+    # Local directory
     local_dir = os.path.join('tests', 'data', run_name)
 
     # Download the dataset, if needed
@@ -26,3 +26,5 @@ def setup_test_data():
     
     # Return the directory where the data is downloaded
     return local_dir
+
+

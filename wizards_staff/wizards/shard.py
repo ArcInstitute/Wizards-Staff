@@ -62,7 +62,7 @@ class Shard:
                     # cache the loaded data
                     self._input_items[item_name] = loader(file_path)
                 except Exception as e:
-                    logger.error(
+                    self._logger.error(
                         f"Failed to load input item '{item_name}' for sample '{self.sample_name}': {e}"
                     )
                     return None
