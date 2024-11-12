@@ -41,7 +41,7 @@ def download_gcp_dir(bucket_name: str, prefix: str, outdir: str=None):
         blob.download_to_filename(local_path)
     
     # Return the output directory
-    return os.path.join(outdir, prefix)
+    return outdir
 
 # Example usage
 def main():
