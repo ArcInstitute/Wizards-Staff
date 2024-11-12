@@ -11,7 +11,8 @@ env:
   TAG_VERSION: 0.1.0
 
 jobs:
-  pytest:
+  test:
+    name: Run Unit Tests
     runs-on: ubuntu-latest
 
     steps:
