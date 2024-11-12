@@ -13,8 +13,8 @@ def download_gcp_dir(bucket_name: str, prefix: str, outdir: str=None):
     Returns:
         The local directory where the files were downloaded
     """
+    # Create a temporary directory if outdir is not specified
     if outdir is None:
-        # Create a temporary directory
         outdir = tempfile.mkdtemp()
 
     # Initialize GCP client
@@ -30,8 +30,9 @@ def download_gcp_dir(bucket_name: str, prefix: str, outdir: str=None):
         if blob.name.endswith('/') and blob.size == 0:
             continue
 
-        # Create local file path
-        local_path = os.path.join(outdir, blob.name)
+        # Remove the prefix from the blob name for local_path
+        relative_path = os.path.relpath(blob.name, prefix)
+        local_path = os.path.join(outdir, relative_path)
 
         # Make sure the directory exists
         os.makedirs(os.path.dirname(local_path), exist_ok=True)

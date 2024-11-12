@@ -23,7 +23,10 @@ def test_init(orb):
     Assess the initialization of the Orb class
     """
     assert isinstance(orb.samples, set)
-    samples = {'10xGCaMP-6wk-Baseline-Stream_Stream_G03_s1_FITC_full', '10xGCaMP-6wk-Baseline-Stream_Stream_F07_s1_FITC_full'}
+    samples = {
+        '10xGCaMP-6wk-Baseline-Stream_Stream_G03_s1_FITC_full', 
+        '10xGCaMP-6wk-Baseline-Stream_Stream_F07_s1_FITC_full'
+    }
     assert orb.samples == samples
     # assert attributes
     assert isinstance(orb.input, pd.DataFrame)
@@ -49,3 +52,21 @@ def test_run_all(orb):
     for result_name,result_data in orb.results:
         assert result_name in result_names
         assert isinstance(result_data, pd.DataFrame)
+
+def test_input_files(orb):
+    """
+    Test the input_files property of the Orb class
+    """
+    input_files = orb.input_files
+    assert isinstance(input_files, pd.DataFrame)
+    expected_columns = {'Sample', 'DataItem', 'FilePath'}
+    assert expected_columns.issubset(input_files.columns)
+
+def test_run_pwc(orb):
+    """
+    Test the run_pwc method of the Orb class
+    """
+    orb.run_pwc(group_name='Well', poly=False, show_plots=False)
+    assert orb.df_mn_pwc is not None
+    assert isinstance(orb.df_mn_pwc, pd.DataFrame)
+    assert not orb.df_mn_pwc.empty

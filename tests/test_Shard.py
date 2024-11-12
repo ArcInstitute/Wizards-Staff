@@ -72,4 +72,28 @@ def test_get_input(shard, mock_files):
         result = shard.get_input(file_type)
         assert isinstance(result, np.ndarray)
 
+def test_has_file(shard, mock_files):
+    """
+    Test the has_file method of the Shard class
+    """
+    for file_type in mock_files.keys():
+        assert shard.has_file(file_type) is True
+    assert shard.has_file('non_existing_file') is False
+
+def test_spatial_filtering(shard):
+    """
+    Test the spatial_filtering method of the Shard class
+    """
+    filtered_idx = shard.spatial_filtering(p_th=90, size_threshold=20000, plot=False, silence=True)
+    assert isinstance(filtered_idx, list)
+
+def test_convert_f_to_cs(shard):
+    """
+    Test the convert_f_to_cs method of the Shard class
+    """
+    calcium_signals, spike_events = shard.convert_f_to_cs(p=2)
+    assert isinstance(calcium_signals, np.ndarray)
+    assert isinstance(spike_events, np.ndarray)
+    assert calcium_signals.shape == spike_events.shape
+
 
