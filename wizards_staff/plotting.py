@@ -1,8 +1,8 @@
 # import
 ## batteries
 import os
+import sys
 import random
-import logging
 import warnings
 from typing import List, Tuple, Optional
 ## 3rd party
@@ -15,10 +15,6 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
 from matplotlib import colors
-
-# Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 # Functions
 def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np.ndarray, 
@@ -92,7 +88,7 @@ def plot_spatial_activity_map(im_min: np.ndarray, cnm_A: np.ndarray, cnm_idx: np
         
         # Return None if no clusters are found
         if best_labels is None:
-            logger.warning('No clusters found. No overlay image will be generated.')
+            print('No clusters found. No overlay image will be generated.', file=sys.stderr)
             return None
 
         # Assign colors to clusters
@@ -226,7 +222,7 @@ def plot_kmeans_heatmap(dff_dat: np.ndarray, filtered_idx: np.ndarray, sample_na
 
     # If just one cluster is found, return None
     if best_sorted_data_t is None:
-        logger.warning('Only one cluster found. No kmeans heatmap plot will be generated.')
+        print('Only one cluster found. No kmeans heatmap plot will be generated.', file=sys.stderr)
         return None, None
 
     # Plotting the best result

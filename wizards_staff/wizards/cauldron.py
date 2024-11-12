@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+import warnings
 from typing import Tuple
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -19,16 +20,15 @@ from wizards_staff.metadata import append_metadata_to_dfs
 from wizards_staff.wizards.familiars import spatial_filtering
 from wizards_staff.wizards.shard import Shard
 
-# logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Suppress RuntimeWarnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # functions
 def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3, 
             percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
             max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
             poly: bool=False, size_threshold: int=20000, show_plots: bool=False, 
-            save_files: bool=False, output_dir: str='wizard_staff_outputs', 
+            save_files: bool=False, output_dir: str='wizards_staff_outputs', 
             threads: int=2, debug: bool=False, **kwargs) -> None:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
@@ -87,7 +87,7 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
                 print(f'WARNING: {e}', file=sys.stderr)
     else:
         with ProcessPoolExecutor(max_workers=threads) as executor:
-            logging.disable(logging.INFO)
+            logging.disable(logging.CRITICAL)
             # Submit the function to the executor for each shard
             futures = {executor.submit(func, shard) for shard in orb.shatter()}
             # Use as_completed to get the results as they are completed
@@ -101,10 +101,6 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
                     print(f'WARNING: {e}', file=sys.stderr)
             # Re-enable logging
             logging.disable(logging.NOTSET)
-
-    # Save DataFrames as CSV files if required
-    if save_files:
-        orb.save_results(output_dir)
     
     # Run PWC analysis if group_name is provided
     if group_name:
@@ -114,12 +110,14 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
             p_th = p_th,
             size_threshold = size_threshold,
             show_plots = show_plots, 
-            save_files = save_files, 
-            output_dir = output_dir,
             **kwargs
         )
     else:
         orb._logger.warning('Skipping PWC analysis as group_name is not provided.')
+
+    # Save DataFrames as CSV files if required
+    if save_files:
+        orb.save_results(output_dir)
 
 def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_threshold: float, 
              p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 

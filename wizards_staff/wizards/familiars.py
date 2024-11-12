@@ -2,7 +2,7 @@
 ## batteries
 import os
 import sys
-import logging
+import warnings
 from typing import List, Tuple
 from collections import defaultdict
 ## 3rd party
@@ -12,10 +12,8 @@ import matplotlib.pyplot as plt
 ## package
 from wizards_staff.plotting import plot_montage
 
-
-# logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Suppress RuntimeWarnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # functions    
 def load_and_filter_files(categorized_files: dict, p_th: int=75, size_threshold: int=20000

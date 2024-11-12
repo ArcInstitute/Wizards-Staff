@@ -86,6 +86,7 @@ class Orb:
     _df_mn_pwc: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
     _df_mn_pwc_intra: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
     _df_mn_pwc_inter: pd.DataFrame = field(default=None, init=False)  # pairwise correlation results
+    _pwc_plots: Dict[str, Any] = field(default_factory=dict, init=False)  # pairwise correlation results
     
     def __post_init__(self):
         # Configure logging
@@ -239,6 +240,11 @@ class Orb:
             data.to_csv(outfile, index=False)
             self._logger.info(f"  '{name}' saved to: {outfile}")
             outfiles.append(outfile)
+        # save plots
+        for label, plot in self._pwc_plots.items():
+            outfile = os.path.join(outdir, f"{label}.png")
+            plot.savefig(outfile, bbox_inches='tight')
+            self._logger.info(f"  Plot saved to: {outfile}")
 
     #-- data processing --#
     @wraps(ws_run_all)
@@ -246,7 +252,6 @@ class Orb:
         """
         Runs all data processing steps.
         """
-        # run all processing steps
         ws_run_all(self, *args, **kwargs)
 
     @wraps(ws_run_pwc)
@@ -254,7 +259,6 @@ class Orb:
         """
         Runs pairwise correlation analysis on all samples.
         """
-        # run PWC on each sample
         ws_run_pwc(self, *args, **kwargs)
 
     def save(self, outfile: str) -> None:
