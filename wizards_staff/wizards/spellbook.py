@@ -2,10 +2,18 @@
 ## batteries
 from typing import Dict, List, Tuple
 ## 3rd party
+import logging
 import numpy as np
 from skimage.io import imread 
 from skimage.measure import label, regionprops
 from caiman.source_extraction.cnmf import deconvolution
+import warnings
+
+# Suppress RuntimeWarnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# Disable logging for deconvolution
+logging.getLogger('caiman.source_extraction.cnmf.deconvolution').setLevel(logging.CRITICAL)
 
 # functions
 def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[0.25, 0.5]
@@ -25,7 +33,7 @@ def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[
     # Initialize arrays for calcium and spike signals
     calcium_signal = np.zeros_like(fluorescence_data)
     spike_signal = np.zeros_like(fluorescence_data)
-    
+
     # Iterate over each neuron's fluorescence data
     for i in range(fluorescence_data.shape[0]):
         fluorescence_trace = np.copy(fluorescence_data[i, :])
@@ -34,7 +42,7 @@ def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[
         calcium, _, _, _, _, spikes, _ = deconvolution.constrained_foopsi(
             fluorescence_trace, bl=None, c1=None, g=None, sn=None, p=p,
             method_deconvolution='oasis', bas_nonneg=True, noise_range=noise_range,
-            noise_method='logmexp', lags=5, fudge_factor=1.0, verbosity=True,
+            noise_method='logmexp', lags=5, fudge_factor=1.0, verbosity=False,
             solvers=None, optimize_g=0
         )
         # Store the results in the respective arrays

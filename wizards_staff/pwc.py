@@ -1,7 +1,7 @@
 # import
 ## batteries
 import os
-import logging
+import warnings
 from typing import Tuple
 from pprint import pprint
 ## third party
@@ -16,15 +16,13 @@ from sklearn.linear_model import LinearRegression
 from wizards_staff.metadata import load_and_process_metadata
 from wizards_staff.wizards.familiars import spatial_filtering #categorize_files, load_and_filter_files, 
 
-# logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Suppress RuntimeWarnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # functions
 def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75, 
             size_threshold: int=20000, pdeg: int=4, lw: float=1, lwp: float=0.5, 
-            psz: float=2, show_plots: bool=False, save_files: bool=False, 
-            output_dir: str='wizard_staff_outputs') -> None:
+            psz: float=2, show_plots: bool=False) -> None:
     """
     Processes data, computes metrics, generates plots, and stores them in DataFrames.
 
@@ -39,8 +37,6 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
         lwp: Line width for points.
         psz: Point size for plots.
         show_plots: Flag to control whether plots are displayed.
-        save_files: Flag to control whether plots and dataframes are saved to files.
-        output_dir: Directory where output files will be saved.
 
     Creates:
         df_mn_pwc: DataFrame containing overall pairwise correlation metrics.
@@ -101,6 +97,8 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
 
     # Setting output file name
     fname = os.path.basename(orb.results_folder) + f"_{group_name}"
+    if fname.startswith('_'):
+        fname = fname[1:]
 
     # Plotting and saving figures
     ## Plot and save the mean pairwise correlation for each group
@@ -110,7 +108,8 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
         'Intra_Group_Mean_PWC' : df_mn_pwc_intra 
     }
     for title, data in d_title.items():
-        plot_pwc_means(
+        label = '_'.join([fname, title.replace("_", "-")])
+        orb._pwc_plots[label] = plot_pwc_means(
             data,
             title = title,
             xlabel = 'Groups', 
@@ -120,29 +119,28 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
             psz = psz, 
             pdeg = 4,
             show_plots = show_plots, 
-            save_files = save_files, 
-            fname = fname,
-            output_dir = output_dir
+            fname = fname
         )
 
-    # Save DataFrames if required
-    if save_files:
-        # Expand the user directory if it exists in the output_dir path
-        output_dir = os.path.expanduser(output_dir)
-        
-        # Create the output directory if it does not exist
-        os.makedirs(output_dir, exist_ok=True)
-        orb._logger.info(f'Saving DataFrames to {output_dir}...')
-    
-        # Define the file paths
-        df_mn_pwc_path = os.path.join(output_dir, f'{fname}_df-mn-pwc.csv')
-        df_mn_pwc_inter_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-intra.csv')
-        df_mn_pwc_intra_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-inter.csv')
+    # # Save DataFrames if required
+    # if save_files:
+    #     orb._logger.info(f'Saving DataFrames to {output_dir}...')
 
-        # Save each DataFrame to a CSV file
-        df_mn_pwc.to_csv(df_mn_pwc_path, index=False)
-        df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
-        df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
+    #     # Expand the user directory if it exists in the output_dir path
+    #     output_dir = os.path.expanduser(output_dir)
+        
+    #     # Create the output directory if it does not exist
+    #     os.makedirs(output_dir, exist_ok=True)
+        
+    #     # Define the file paths
+    #     df_mn_pwc_path = os.path.join(output_dir, f'{fname}_df-mn-pwc.csv')
+    #     df_mn_pwc_inter_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-intra.csv')
+    #     df_mn_pwc_intra_path = os.path.join(output_dir, f'{fname}_df-mn-pwc-inter.csv')
+
+    #     # Save each DataFrame to a CSV file
+    #     df_mn_pwc.to_csv(df_mn_pwc_path, index=False)
+    #     df_mn_pwc_intra.to_csv(df_mn_pwc_inter_path, index=False)
+    #     df_mn_pwc_inter.to_csv(df_mn_pwc_intra_path, index=False)
 
     # add results to orb
     orb._df_mn_pwc = df_mn_pwc
@@ -358,25 +356,25 @@ def filter_group_keys(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict) -> dict:
         filtered_d_k_in_groups[group_id] = filtered_keys_in_group
     return filtered_d_k_in_groups
 
-def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlabel: str='Groups', 
+def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str=None, xlabel: str='Groups', 
                    ylabel: str='Mean Pairwise Correlation', poly: bool=False, lwp: float=1, 
-                   psz: float=5, pdeg: int=4, show_plots: bool=True, save_files: bool=False
-                   ) -> None:
+                   psz: float=5, pdeg: int=4, show_plots: bool=True, save_files: bool=True
+                   ) -> plt.Figure:
     """
     Generates plots of mean pairwise correlations with error bars and optionally saves the plots.
 
     Args:
-        d_mn_pwc (dict): Dictionary containing mean pairwise correlation data.
-        title (str): Title of the plot.
-        fname (str): Filename for saving the results (without extension).
-        output_dir (str): Directory where output files will be saved.
-        xlabel (str): Label for the x-axis. Default is 'Groups'.
-        ylabel (str): Label for the y-axis. Default is 'Mean Pairwise Correlation'.
-        lwp (float): Line width for the plot. Default is 1.
-        psz (float): Point size for the plot. Default is 5.
-        pdeg (int): Degree of the polynomial fit, if applied. Default is 4.
-        show_plots (bool): Flag to control whether plots are displayed. Default is True.
-        save_files (bool): Flag to control whether plots are saved to files. Default is False.
+        d_mn_pwc: Dictionary containing mean pairwise correlation data.
+        title: Title of the plot.
+        fname: Filename for saving the results (without extension).
+        output_dir: Directory where output files will be saved.
+        xlabel: Label for the x-axis.
+        ylabel: Label for the y-axis.
+        lwp: Line width for the plot.
+        psz: Point size for the plot.
+        pdeg: Degree of the polynomial fit, if applied.
+        show_plots: Flag to control whether plots are displayed.
+        save_files: Flag to control whether plots are saved.
     """
     # Generate and sort means and standard deviations
     d, d_std = gen_mn_std_means(d_mn_pwc)
@@ -405,7 +403,7 @@ def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlab
     plt.title(title)
     plt.legend()
     
-    if save_files==True:
+    if save_files==True and output_dir is not None:
         # Expand the user directory if it exists in the output_dir path
         output_dir = os.path.expanduser(output_dir)
         # Create the output directory if it does not exist
@@ -421,3 +419,5 @@ def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str, xlab
         plt.show()
     else:
         plt.close()
+
+    return fig

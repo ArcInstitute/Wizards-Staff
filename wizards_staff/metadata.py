@@ -1,12 +1,6 @@
 # import
-## batteries
-import logging
 ## 3rd party
 import pandas as pd
-
-# logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # functions
 def load_and_process_metadata(metadata_path: str) -> pd.DataFrame:
