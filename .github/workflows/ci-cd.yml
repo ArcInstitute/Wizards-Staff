@@ -1,10 +1,10 @@
+name: wizards-staff
+
 on:
   pull_request:
     branches: [main, master]
   push:
     branches: [main, master]
-
-name: wizards-staff
 
 env:
   APP: wizards-staff
