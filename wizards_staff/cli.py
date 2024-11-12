@@ -33,6 +33,8 @@ def parse_args():
                         help='Percentage threshold for FWHM calculation')
     parser.add_argument('--p-th', type=float, default=75,
                         help='Percentile threshold for image processing')
+    parser.add_argument('--zscore-threshold', type=int, default=3,
+                        help='Z-score threshold for filtering out noise events')
     parser.add_argument('--min-clusters', type=int, default=2,
                         help='The minimum number of clusters to try')
     parser.add_argument('--max-clusters', type=int, default=10,
@@ -78,7 +80,8 @@ def main():
         percentage_threshold=0.2,
         p_th=75,
         min_clusters=2,
-        max_clusters=10
+        max_clusters=10,
+        zscore_threshold=3
     )
 
     # Status

@@ -22,7 +22,7 @@ def setup_test_data():
 
     # Download the dataset, if needed
     if not os.path.exists(local_dir):
-        local_dir = download_gcp_dir(bucket_name, prefix)
+        local_dir = download_gcp_dir(bucket_name, prefix, outdir=local_dir)
     
     # Return the directory where the data is downloaded
     return local_dir
