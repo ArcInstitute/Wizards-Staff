@@ -52,7 +52,7 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
         silhouette_scores_df (pd.DataFrame): DataFrame containing silhouette scores for K-means clustering.
     """
     # Scan output folder for files necessary for processing based on their prefixes and extensions
-    categorized_files = categorize_files(results_folder)
+    categorized_files = categorize_files(results_folder, metadata_path)
 
     # Initialize lists to store data for each metric type
     rise_time_data = []
