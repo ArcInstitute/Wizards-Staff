@@ -15,10 +15,11 @@ def categorize_files(results_folder, metadata_csv):
 
     Args:
         results_folder (str or Path): Path to the folder containing result files.
-        metadata_csv (str or Path): Path to the CSV file containing a `filename` column.
+        metadata_csv (str or Path): Path to the CSV file containing a `Sample` column.
         
     Returns:
-        dict: Dictionary where keys are from the `filename` column and values are lists of file paths.
+        dict: Dictionary where keys are from the `Sample` column and values are sorted lists of file paths.
+              If no files are matched for a key, the value is [None].
     """
     results_folder = Path(results_folder)  # Ensure it's a Path object
 
@@ -33,7 +34,7 @@ def categorize_files(results_folder, metadata_csv):
         'pnr-filter.npy',
         'pnr-cn-filter.png',
         'minprojection.tif',
-        'mask.tif',
+        'masks.tif',
     ]
     
     # Load metadata CSV
@@ -57,12 +58,21 @@ def categorize_files(results_folder, metadata_csv):
                             categorized_files[key].append(str(path))
                             break
 
-    # Ensure that each entry has a mask, set to None if not present
+    # Ensure that every key from metadata is in the dictionary
     for key in filenames:
-        if not any('mask' in file for file in categorized_files[key]):
-            categorized_files[key].append(None)
+        if key not in categorized_files:
+            categorized_files[key] = [None]  # If no files, set to [None]
+        else:
+            # Ensure a mask is included; append None if missing
+            if not any('mask' in file for file in categorized_files[key]):
+                categorized_files[key].append(None)
 
-    return categorized_files
+    # Sort the file paths within each key and return an ordered dictionary
+    ordered_categorized_files = {
+        key: sorted(categorized_files[key]) for key in sorted(categorized_files)
+    }
+
+    return ordered_categorized_files
 
 def load_and_filter_files(categorized_files, p_th=75, size_threshold=20000):
     """
@@ -89,12 +99,14 @@ def load_and_filter_files(categorized_files, p_th=75, size_threshold=20000):
         d_dff[raw_filename] = file_data['dff_dat']
 
         filtered_idx = spatial_filtering(
-            cn_filter= file_data['cn_filter_img'], p_th=p_th, size_threshold=size_threshold, 
-            cnm_A=file_data['cnm_A'], cnm_idx=file_data['cnm_idx'], im_min = file_data['im_min'], plot=False, silence=True
+            im_min= file_data['im_min'], p_th=p_th, size_threshold=size_threshold, 
+            cnm_A=file_data['cnm_A'], cnm_idx=file_data['cnm_idx'], plot=False, silence=True
         )
         d_nspIDs[raw_filename] = filtered_idx
 
     return d_dff, d_nspIDs
+
+from skimage.io import imread
 
 def load_required_files(categorized_files, raw_filename):
     """
@@ -110,44 +122,40 @@ def load_required_files(categorized_files, raw_filename):
     try:
         return {
             'cn_filter': np.load(categorized_files[raw_filename][0], allow_pickle=True),
-            'cn_filter_img': categorized_files[raw_filename][1],
-            'cnm_A': np.load(categorized_files[raw_filename][2], allow_pickle=True),
-            'cnm_C': np.load(categorized_files[raw_filename][3], allow_pickle=True),
-            'cnm_S': np.load(categorized_files[raw_filename][4], allow_pickle=True),
-            'cnm_idx': np.load(categorized_files[raw_filename][5], allow_pickle=True),
-            'pnr_hist': imread(categorized_files[raw_filename][6]),
-            'df_f0_graph': imread(categorized_files[raw_filename][7]),
-            'dff_dat': np.load(categorized_files[raw_filename][8], allow_pickle=True),
+            # 'cn_filter_img': categorized_files[raw_filename][1],
+            'cnm_A': np.load(categorized_files[raw_filename][1], allow_pickle=True),
+            'cnm_C': np.load(categorized_files[raw_filename][2], allow_pickle=True),
+            'cnm_S': np.load(categorized_files[raw_filename][3], allow_pickle=True),
+            'cnm_idx': np.load(categorized_files[raw_filename][4], allow_pickle=True),
+            'pnr_hist': imread(categorized_files[raw_filename][5]),
+            'pnr_filter': np.load(categorized_files[raw_filename][6], allow_pickle=True),
+            'dff_dat': np.load(categorized_files[raw_filename][7], allow_pickle=True),
             'dat': np.load(categorized_files[raw_filename][9], allow_pickle=True),
-            'pnr_filter': np.load(categorized_files[raw_filename][10], allow_pickle=True),
-            'im_min': categorized_files[raw_filename][11] if 12 not in categorized_files[raw_filename] else categorized_files[raw_filename][12],
-            'mask': imread(categorized_files[raw_filename][13]) if 13 in categorized_files[raw_filename] else None
+            'im_min': categorized_files[raw_filename][11],
+            'mask': imread(categorized_files[raw_filename][10]) if 10 in categorized_files[raw_filename] else None
         }
     except Exception as e:
         print(f"Error loading files for {raw_filename}: {e}")
         return None
     
-def spatial_filtering(cn_filter, p_th, size_threshold, cnm_A, cnm_idx, im_min, plot=True, silence = False):
+def spatial_filtering(im_min, p_th, size_threshold, cnm_A, cnm_idx, plot=True, silence = False):
     """
     Applies spatial filtering to components, generates montages, and optionally plots the results.
     
     Parameters:
-    cn_filter (str): Path to the masked cn_filter image
+    im_min (ndarray): Minimum intensity image for overlay.
     p_th (float): Percentile threshold for image processing.
     size_threshold (int): Size threshold for filtering out noise events.
     cnm_A (ndarray): Spatial footprint matrix of neurons.
-    im_min (ndarray): Minimum intensity image for overlay.
     cnm_idx (ndarray): Indices of accepted components.
     plot (bool): If True, shows the plots. Default is True.
     
     Returns:
     filtered_idx (list): List of indices of the filtered components.
     """
-    # Load the mask image and get its shape
-    if plot:
-        im_min = imread(im_min)
-    mask_image = imread(cn_filter)
-    im_shape = mask_image.shape
+    # Load the image and get its shape
+    im_min = imread(im_min)
+    im_shape = im_min.shape
     im_sz = [im_shape[0], im_shape[1]]
     
     # Initialize storage for processed images

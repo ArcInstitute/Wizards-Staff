@@ -68,8 +68,8 @@ def run_all(results_folder, metadata_path, frate, zscore_threshold = 3, percenta
             
             # Apply spatial filtering to the data to remove noise
             filtered_idx = spatial_filtering(
-                cn_filter= file_data['cn_filter_img'], p_th = p_th, size_threshold=size_threshold, 
-                cnm_A=file_data['cnm_A'], cnm_idx=file_data['cnm_idx'], im_min = file_data['im_min'], plot=False, silence=True
+                im_min = file_data['im_min'], p_th = p_th, size_threshold=size_threshold, 
+                cnm_A=file_data['cnm_A'], cnm_idx=file_data['cnm_idx'], plot=False, silence=True
             )
             
             # Load the ΔF/F₀ data for the given image file and add a small constant to avoid division by zero``
