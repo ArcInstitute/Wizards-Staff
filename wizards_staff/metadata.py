@@ -11,7 +11,7 @@ def load_and_process_metadata(metadata_path):
         pd.DataFrame: Preprocessed metadata DataFrame.
     """
     metadata_df = pd.read_csv(metadata_path)
-    metadata_df['Filename'] = metadata_df['Filename'].str.replace('.czi', '').str.replace('.tif', '')
+    metadata_df['Sample'] = metadata_df['Sample'].str.replace('.czi', '').str.replace('.tif', '')
 
     return metadata_df
 
@@ -28,7 +28,8 @@ def append_metadata_to_dfs(metadata_path, **dataframes):
         dict: A dictionary of DataFrames with appended metadata.
     """
     # Load the metadata CSV file
-    metadata_df = load_and_process_metadata(metadata_path)
+    metadata_df = pd.read_csv(metadata_path)
+    metadata_df = metadata_df.rename(columns={'Sample': 'Filename'})
 
     # Dictionary to store updated DataFrames
     updated_dfs = {}
