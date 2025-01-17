@@ -309,9 +309,12 @@ class Orb:
     @property
     def input_files(self) -> pd.DataFrame:
         if self._input_files is None:
-            self._input_files = pd.concat(
-                [shard.input_files for shard in self.shards]
-            )
+            try:
+                self._input_files = pd.concat(
+                    [shard.input_files for shard in self.shards]
+                )
+            except ValueError:
+                logging.warning("No shards found")
         return self._input_files
 
     @property
