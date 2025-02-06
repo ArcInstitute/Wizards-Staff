@@ -3,6 +3,7 @@ tmp/
 test/
 .env
 notebooks/dev/
+wizards-staff_output/
 tests/data/Calcium_AAV-GCAMP_6wk_20240416/
 
 # Byte-compiled / optimized / DLL files
