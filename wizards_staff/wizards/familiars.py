@@ -67,6 +67,14 @@ def spatial_filtering(p_th: float, size_threshold: int, cnm_A: np.ndarray, cnm_i
     Returns:
         filtered_idx (list): List of indices of the filtered components.
     """
+    assert len(cnm_A.shape) == 2, f"cnm_A should be 2D array, got shape {cnm_A.shape}"
+    assert len(cnm_idx.shape) == 1, f"cnm_idx should be 1D array, got shape {cnm_idx.shape}"
+    assert cnm_idx.max() < cnm_A.shape[1], (
+        f"cnm_idx contains invalid indices. Max index {cnm_idx.max()} "
+        f"exceeds cnm_A dimensions {cnm_A.shape[1]}"
+    )
+    assert len(im_min.shape) == 2, f"im_min should be 2D array, got shape {im_min.shape}"
+
     # Load the mask image and get its shape
     im_shape = im_min.shape
     im_sz = [im_shape[0], im_shape[1]]
