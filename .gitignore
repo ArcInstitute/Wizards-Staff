@@ -88,3 +88,6 @@ target/
 
 # Pytest cache
 .pytest_cache/
+
+# .txt files
+*.txt
