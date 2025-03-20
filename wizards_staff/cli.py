@@ -43,6 +43,8 @@ def parse_args():
                         help='Directory to save the output files')
     parser.add_argument('--threads', type=int, default=2,
                         help='Number of parallel processes')
+    parser.add_argument('--allow-missing', action='store_true', default=False,
+                        help='Allow missing input files')
     parser.add_argument('--debug', action='store_true', default=False,
                         help='Debug mode')
     return parser.parse_args()
@@ -65,7 +67,7 @@ def main():
         sys.exit(f'Results folder does not exist: {args.results_folder}')
 
     # run the full pipeline
-    orb = Orb(args.results_folder, args.metadata_path)
+    orb = Orb(args.results_folder, args.metadata_path, allow_missing=args.allow_missing)
 
     # run all
     orb.run_all(
