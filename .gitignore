@@ -2,6 +2,7 @@
 tmp/
 test/
 .env
+wizards-staff_output/
 notebooks/dev/
 wizards-staff_output/
 tests/data/Calcium_AAV-GCAMP_6wk_20240416/
@@ -88,3 +89,6 @@ target/
 
 # Pytest cache
 .pytest_cache/
+
+# .txt files
+*.txt

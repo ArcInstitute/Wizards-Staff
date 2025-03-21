@@ -207,12 +207,12 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     # Calculate mask metrics and store them      
     if shard.has_file('mask'):
         mask_metrics = shard.calc_mask_shape_metrics()
-    shard._mask_metrics_data.append({
-        'Sample': shard.sample_name,
-        'Roundness':  mask_metrics.get('roundness'),
-        'Diameter': mask_metrics.get('diameter'),
-        'Area': mask_metrics.get('area')
-    })
+        shard._mask_metrics_data.append({
+            'Sample': shard.sample_name,
+            'Roundness':  mask_metrics.get('roundness'),
+            'Diameter': mask_metrics.get('diameter'),
+            'Area': mask_metrics.get('area')
+        })
 
     # Create ΔF/F₀ graph
     plot_dff_activity(

@@ -26,39 +26,48 @@ def npy_loader(infile, allow_pickle=True):
 DATA_ITEM_MAPPING = {
     'cnm_A': {
         'suffixes': ['_cnm-A.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'cnm_C': {
         'suffixes': ['_cnm-C.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'cnm_S': {
         'suffixes': ['_cnm-S.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'cnm_idx': {
         'suffixes': ['_cnm-idx.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'df_f0_graph': {
         'suffixes': ['_df-f0-graph.tif'],
-        'loader': imread
+        'loader': imread,
+        'required': False
     },
     'dff_dat': { 
         'suffixes': ['_dff-dat.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'f_dat': { 
         'suffixes': ['_f-dat.npy'],
-        'loader': npy_loader
+        'loader': npy_loader,
+        'required': True
     },
     'minprojection': {    # aka: im_min
         'suffixes': ['_minprojection.tif'],
-        'loader': imread
+        'loader': imread,
+        'required': True
     },
     'mask': {  
         'suffixes': ['_masks.tif'],
-        'loader': imread
+        'loader': imread,
+        'required': True
     }
 }
 
@@ -103,6 +112,7 @@ class Orb:
         Categorizes files into corresponding data items for each sample.
         """
         self._logger.info("Categorizing files...")
+        mask_suffixes = {}
         # load files 
         for file_path in self._list_files(self.results_folder):
             # get file info 
@@ -119,6 +129,18 @@ class Orb:
                 continue
             ## suffix
             file_suffix = file_basename[len(sample_name):]
+
+            # check for mask suffix consistency 
+            # ie make sure we arent pulling both masked and unmasked files
+            mask_part = file_suffix.split('_')[0]
+            if sample_name in mask_suffixes:
+                assert mask_suffixes[sample_name] == mask_part, (
+                    f"Inconsistent mask suffix for sample {sample_name}: "
+                    f"expected '{mask_suffixes[sample_name]}', got '{mask_part}'"
+                )
+            else:
+                mask_suffixes[sample_name] = mask_part
+        
             ## categorize file based on suffix
             for item_name, data_info in self._data_mapping.items():
                 # file suffix matches data item suffix?
@@ -133,10 +155,21 @@ class Orb:
                             allow_missing=self.allow_missing
                         )
                     )
+                    if item_name in shard.files:
+                        existing_file, _ = shard.files[item_name]
+                        # Extract the previously recorded suffix
+                        existing_suffix = existing_file.split(sample_name, 1)[-1]
+                        # Assert that the new suffix is identical to the existing one
+                        assert existing_suffix == file_suffix, (
+                            f"Inconsistent suffix for sample {sample_name} and data item '{item_name}': "
+                            f"'{existing_suffix}' vs '{file_suffix}'"
+                        )
                     shard.files[item_name] = (file_path, data_info['loader'])
                     break
         # check for missing files
-        for item_name in self._data_mapping.keys():
+        for item_name, item_info in self._data_mapping.items():
+            if not item_info.get('required', True):  # Skip warning if item is not required
+                continue
             missing_samples = []
             for sample in self._samples:
                 try:
@@ -311,9 +344,12 @@ class Orb:
     @property
     def input_files(self) -> pd.DataFrame:
         if self._input_files is None:
-            self._input_files = pd.concat(
-                [shard.input_files for shard in self.shards]
-            )
+            try:
+                self._input_files = pd.concat(
+                    [shard.input_files for shard in self.shards]
+                )
+            except ValueError:
+                logging.warning("No shards found")
         return self._input_files
 
     @property
