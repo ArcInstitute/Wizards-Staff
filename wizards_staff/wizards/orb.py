@@ -80,6 +80,7 @@ class Orb:
     results_folder: str
     metadata_file_path: str
     metadata: pd.DataFrame = field(init=False)
+    allow_missing: bool = False
     quiet: bool = False
     _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: pd.DataFrame = field(default=None, init=False)
@@ -150,7 +151,8 @@ class Orb:
                             sample_name,
                             metadata=self.metadata[self.metadata['Sample'] == sample_name],
                             files={},
-                            quiet=self.quiet
+                            quiet=self.quiet,
+                            allow_missing=self.allow_missing
                         )
                     )
                     if item_name in shard.files:

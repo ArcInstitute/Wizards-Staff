@@ -30,6 +30,7 @@ class Shard:
     """
     sample_name: str
     metadata: pd.DataFrame
+    allow_missing: bool = False
     files: Dict[str, Tuple[str, Callable[[str], Any]]] 
     quiet: bool = False
     _input_files: pd.DataFrame = field(default=None, init=False)
@@ -47,6 +48,13 @@ class Shard:
     def get_input(self, item_name: str, req: bool=False) -> Any:
         """
         Retrieves the input item for the given name, loading it if not already loaded.
+        Args:
+            item_name: The name of the input item to retrieve.
+            req: Whether the input item is required.
+        Returns:
+            The loaded input item, or None if the input item is not found and allow_missing is True.
+        Raises:
+            FileNotFoundError: If the input item is not found and allow_missing is False.
         """
         if item_name not in self._input_items:
             # load file
@@ -56,6 +64,9 @@ class Shard:
                 file_path, loader = file_info
                 # check that file exists
                 if not os.path.exists(file_path):
+                    if self.allow_missing:
+                        self._logger.warning(f"File not found: {file_path}; skipping due to --allow-missing")
+                        return None
                     raise FileNotFoundError(f"File not found: {file_path}")
                 # load via the loader
                 try:
