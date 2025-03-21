@@ -141,7 +141,6 @@ class Orb:
             # ie make sure we arent pulling both masked and unmasked files
             mask_part = file_suffix.split('_')[0]
             if sample_name in mask_suffixes:
-                #print(sample_name, file_path, mask_suffixes[sample_name], mask_part);
                 assert mask_suffixes[sample_name] == mask_part, (
                     f"Inconsistent mask suffix for sample {sample_name}: "
                     f"expected '{mask_suffixes[sample_name]}', got '{mask_part}'"
