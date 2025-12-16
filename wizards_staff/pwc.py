@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from scipy.cluster.vq import vq, kmeans2
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
+from tqdm.notebook import tqdm
 ## package
 from wizards_staff.metadata import load_and_process_metadata
 from wizards_staff.wizards.familiars import spatial_filtering #categorize_files, load_and_filter_files, 
@@ -61,7 +62,8 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
     d_nspIDs = {}
 
     # Iterate over each shard
-    for shard in orb.shatter():
+    shards = list(orb.shatter())
+    for shard in tqdm(shards, desc='Computing pairwise correlations...'):
         # Create a dictionary of dff_dat
         try:
             d_dff[shard.sample_name] = shard.get_input('dff_dat', req=True) 
@@ -314,13 +316,19 @@ def gen_polynomial_fit(data_dict: dict, degree: int=4) -> Tuple[np.ndarray, np.n
         tuple: Arrays of x values and corresponding predicted y values from the polynomial fit.
     """
     # Extract keys and values from the dictionary
-    x_values = np.array(list(data_dict.keys()))
+    # Use numeric indices for x-values since keys may be strings (group names)
+    keys = list(data_dict.keys())
+    x_values = np.arange(len(keys), dtype=float)
     y_values = np.array(list(data_dict.values()))
 
     # Remove NaN values from y_values and corresponding x_values
     mask = np.isnan(y_values)
     y_values = y_values[~mask]
     x_values = x_values[~mask]
+
+    # Need at least degree+1 points for polynomial fit
+    if len(x_values) < degree + 1:
+        return None, None
 
     # Reshape x_values for polynomial features
     x_values = x_values[:, np.newaxis]
@@ -396,7 +404,8 @@ def plot_pwc_means(d_mn_pwc: dict, title: str, fname: str, output_dir: str=None,
     # Polynomial fit can be added if needed
     if poly:
         x, y = gen_polynomial_fit(d, degree=pdeg)
-        ax.plot(x, y, color='gray', linewidth=lwp)
+        if x is not None and y is not None:
+            ax.plot(x, y, color='gray', linewidth=lwp)
     
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)

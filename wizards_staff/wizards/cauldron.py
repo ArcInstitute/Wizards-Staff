@@ -6,7 +6,7 @@ import logging
 import warnings
 from typing import Tuple
 from functools import partial
-from concurrent.futures import ProcessPoolExecutor, as_completed
+# joblib is imported locally in run_all when threads > 1
 ## 3rd party
 import numpy as np
 import pandas as pd
@@ -24,19 +24,20 @@ from wizards_staff.wizards.shard import Shard
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # functions
-def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3, 
+def run_all(orb: "Orb", frate: int=None, zscore_threshold: int=3, 
             percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
             max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
             poly: bool=False, size_threshold: int=20000, show_plots: bool=False, 
             save_files: bool=False, output_dir: str='wizards_staff_outputs', 
-            threads: int=2, debug: bool=False, **kwargs) -> None:
+            threads: int=1, debug: bool=False, **kwargs) -> None:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
 
     Args:
         results_folder: Path to the results folder.
         metadata_path: Path to the metadata CSV file.
-        frate: Frames per second of the imaging session.
+        frate: Frames per second of the imaging session. If None (default), reads from 
+               the 'Frate' column in metadata for each sample, supporting per-sample frame rates.
         zscore_threshold: Z-score threshold for spike detection.
         percentage_threshold: Percentage threshold for FWHM calculation.
         p_th: Percentile threshold for image processing.
@@ -78,32 +79,35 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
         output_dir=output_dir
     )
     desc = 'Shattering the orb and processing each shard...'
+    shards = list(orb.shatter())
+    
     if debug or threads == 1:
-        orb._logger.info(desc)
-        for shard in orb.shatter():
+        # Sequential processing (more memory efficient)
+        for shard in tqdm(shards, desc=desc):
             try:
-                func(shard)
+                updated_shard = func(shard)
+                orb._shards[updated_shard.sample_name] = updated_shard
             except Exception as e:
                 print(f'WARNING: {e}', file=sys.stderr)
     else:
-        with ProcessPoolExecutor(max_workers=threads) as executor:
-            logging.disable(logging.CRITICAL)
-            # Submit the function to the executor for each shard
-            futures = {executor.submit(func, shard) for shard in orb.shatter()}
-            # Use as_completed to get the results as they are completed
-            for future in tqdm(as_completed(futures), total=len(futures), desc=desc):
-                try:
-                    # Get the result from each completed future
-                    updated_shard = future.result()
+        # Parallel processing using joblib for better numpy array handling
+        from joblib import Parallel, delayed
+        logging.disable(logging.CRITICAL)
+        try:
+            results = Parallel(n_jobs=threads, prefer="processes")(
+                delayed(func)(shard) for shard in tqdm(shards, desc=desc)
+            )
+            for updated_shard in results:
+                if updated_shard is not None:
                     orb._shards[updated_shard.sample_name] = updated_shard
-                except Exception as e:
-                    # Handle any exception that occurred during the execution
-                    print(f'WARNING: {e}', file=sys.stderr)
-            # Re-enable logging
+        except Exception as e:
+            print(f'WARNING: {e}', file=sys.stderr)
+        finally:
             logging.disable(logging.NOTSET)
     
     # Run PWC analysis if group_name is provided
     if group_name:
+        print('Running pairwise correlation analysis...', flush=True)
         orb.run_pwc(
             group_name,
             poly = poly,
@@ -112,12 +116,15 @@ def run_all(orb: "Orb", frate: int=30, zscore_threshold: int=3,
             show_plots = show_plots, 
             **kwargs
         )
+        print('Pairwise correlation analysis complete.', flush=True)
     else:
         orb._logger.warning('Skipping PWC analysis as group_name is not provided.')
 
     # Save DataFrames as CSV files if required
     if save_files:
+        print(f'Saving results to {output_dir}...', flush=True)
         orb.save_results(output_dir)
+        print('Results saved.', flush=True)
 
 def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_threshold: float, 
              p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 
@@ -132,6 +139,11 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         shard: The updated shard object
     """    
     shard._logger.info(f'Processing shard: {shard.sample_name}')
+
+    # Get frame rate from metadata if not explicitly provided
+    if frate is None:
+        frate = int(shard.metadata['Frate'].iloc[0])
+        shard._logger.info(f'Using frame rate from metadata: {frate} fps')
 
     # Check for required inputs
     for key in ['dff_dat', 'minprojection', 'cnm_A']:
@@ -201,7 +213,7 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         shard._frpm_data.append({
             'Sample': shard.sample_name,
             'Neuron Index': neuron_idx,
-            'Firing Rate Per Min.': frpm_value
+            'Firing Rate Per Min': frpm_value
         })
 
     # Calculate mask metrics and store them      

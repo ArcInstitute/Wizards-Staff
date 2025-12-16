@@ -38,7 +38,7 @@ Orb(results_folder, metadata_file_path, quiet=False)
 ##### `run_all`
 
 ```python
-run_all(group_name=None, frate=30, zscore_threshold=3, percentage_threshold=0.2, 
+run_all(group_name=None, frate=None, zscore_threshold=3, percentage_threshold=0.2, 
         p_th=75, min_clusters=2, max_clusters=10, random_seed=1111111, 
         poly=False, size_threshold=20000, show_plots=False, save_files=False, 
         output_dir='wizards_staff_outputs', threads=2, debug=False, **kwargs)
@@ -49,7 +49,7 @@ Runs a comprehensive analysis on all samples, calculating metrics like rise time
 **Arguments:**
 
 - `group_name (str)`: Column in metadata to group samples by (required for PWC analysis)
-- `frate (int)`: Frame rate in frames per second
+- `frate (int)`: Frame rate in frames per second. If None (default), automatically reads from the 'Frate' column in metadata for each sample
 - `zscore_threshold (int)`: Z-score threshold for spike detection
 - `percentage_threshold (float)`: Threshold for FWHM calculation
 - `p_th (float)`: Percentile threshold for spatial filtering
