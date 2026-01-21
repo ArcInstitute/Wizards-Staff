@@ -84,8 +84,11 @@ class Orb:
     quiet: bool = False
     _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: pd.DataFrame = field(default=None, init=False)
+    _fall_time_data: pd.DataFrame = field(default=None, init=False)
     _fwhm_data: pd.DataFrame = field(default=None, init=False)
     _frpm_data: pd.DataFrame = field(default=None, init=False)
+    _peak_amplitude_data: pd.DataFrame = field(default=None, init=False)
+    _peak_to_peak_data: pd.DataFrame = field(default=None, init=False)
     _mask_metrics_data: pd.DataFrame = field(default=None, init=False)
     _silhouette_scores_data: pd.DataFrame = field(default=None, init=False)
     _shards: Dict[str, Shard] = field(default_factory=dict, init=False)   # loaded data
@@ -256,7 +259,8 @@ class Orb:
 
     #-- save data --#
     def save_results(self, outdir: str, result_names: 
-                  list=["rise_time_data", "fwhm_data", "frpm_data", 
+                  list=["rise_time_data", "fall_time_data", "fwhm_data", "frpm_data",
+                        "peak_amplitude_data", "peak_to_peak_data",
                         "mask_metrics_data", "silhouette_scores_data",
                         "df_mn_pwc", "df_mn_pwc_intra", "df_mn_pwc_inter"]):
         """
@@ -378,8 +382,11 @@ class Orb:
         """
         yield from {
             'rise_time_data': self.rise_time_data,
+            'fall_time_data': self.fall_time_data,
             'fwhm_data': self.fwhm_data,
             'frpm_data': self.frpm_data,
+            'peak_amplitude_data': self.peak_amplitude_data,
+            'peak_to_peak_data': self.peak_to_peak_data,
             'mask_metrics_data': self.mask_metrics_data,
             'silhouette_scores_data': self.silhouette_scores_data,
             'df_mn_pwc': self.df_mn_pwc,
@@ -397,6 +404,21 @@ class Orb:
             return None
         # explode columns, if they exist
         cols = ['Rise Times', 'Rise Positions']        
+        if all(col in DF.columns for col in cols):
+            DF = DF.explode(cols)
+        # return after merging with metadata
+        return DF.merge(self.metadata, on='Sample', how='left')
+
+    @property
+    def fall_time_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with fall time data (time from peak to return to baseline).
+        """
+        DF = self._get_shard_data('_fall_time_data')
+        if DF is None:
+            return None
+        # explode columns, if they exist
+        cols = ['Fall Times', 'Fall Positions']
         if all(col in DF.columns for col in cols):
             DF = DF.explode(cols)
         # return after merging with metadata
@@ -424,6 +446,36 @@ class Orb:
         DF = self._get_shard_data('_frpm_data')
         if DF is None:
             return None
+        return DF.merge(self.metadata, on='Sample', how='left')
+
+    @property
+    def peak_amplitude_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with peak amplitude data (height of each calcium transient).
+        """
+        DF = self._get_shard_data('_peak_amplitude_data')
+        if DF is None:
+            return None
+        # explode columns, if they exist
+        cols = ['Peak Amplitudes', 'Peak Positions']
+        if all(col in DF.columns for col in cols):
+            DF = DF.explode(cols)
+        # return after merging with metadata
+        return DF.merge(self.metadata, on='Sample', how='left')
+
+    @property
+    def peak_to_peak_data(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame with inter-spike interval (peak-to-peak distance) data.
+        """
+        DF = self._get_shard_data('_peak_to_peak_data')
+        if DF is None:
+            return None
+        # explode columns, if they exist
+        cols = ['Inter-Spike Intervals']
+        if all(col in DF.columns for col in cols):
+            DF = DF.explode(cols)
+        # return after merging with metadata
         return DF.merge(self.metadata, on='Sample', how='left')
 
     @property

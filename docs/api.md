@@ -100,7 +100,8 @@ Yields each Shard (sample) in the Orb for individual processing.
 ##### `save_results`
 
 ```python
-save_results(outdir, result_names=["rise_time_data", "fwhm_data", "frpm_data", 
+save_results(outdir, result_names=["rise_time_data", "fall_time_data", "fwhm_data", "frpm_data",
+                                  "peak_amplitude_data", "peak_to_peak_data",
                                   "mask_metrics_data", "silhouette_scores_data",
                                   "df_mn_pwc", "df_mn_pwc_intra", "df_mn_pwc_inter"])
 ```
@@ -118,8 +119,11 @@ Saves analysis results to disk.
 - `input_files`: DataFrame of input file paths
 - `input`: DataFrame of input data with metadata
 - `rise_time_data`: DataFrame of rise time metrics
+- `fall_time_data`: DataFrame of fall time metrics (time from peak to baseline)
 - `fwhm_data`: DataFrame of FWHM metrics
 - `frpm_data`: DataFrame of firing rate metrics
+- `peak_amplitude_data`: DataFrame of peak amplitude metrics (transient heights)
+- `peak_to_peak_data`: DataFrame of inter-spike interval metrics
 - `mask_metrics_data`: DataFrame of mask shape metrics
 - `silhouette_scores_data`: DataFrame of clustering metrics
 - `df_mn_pwc`: DataFrame of pairwise correlations
@@ -240,6 +244,49 @@ Calculates firing rate per minute.
 - `frate (int)`: Frame rate in frames per second
 - `zscore_threshold (int)`: Z-score threshold for spike detection
 
+##### `calc_fall_tm`
+
+```python
+calc_fall_tm(calcium_signals, spike_zscores, zscore_threshold=3, baseline_fraction=0.1)
+```
+
+Calculates fall time of calcium signals (time from peak to return to baseline).
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix
+- `spike_zscores (ndarray)`: Z-scored spike event matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+- `baseline_fraction (float)`: Fraction of peak amplitude to consider as baseline
+
+##### `calc_peak_amplitude`
+
+```python
+calc_peak_amplitude(calcium_signals, spike_zscores, zscore_threshold=3)
+```
+
+Calculates the amplitude (height) of each calcium transient peak.
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix
+- `spike_zscores (ndarray)`: Z-scored spike event matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+
+##### `calc_peak_to_peak`
+
+```python
+calc_peak_to_peak(calcium_signals, spike_zscores, zscore_threshold=3)
+```
+
+Calculates inter-spike intervals (time between consecutive peaks).
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix
+- `spike_zscores (ndarray)`: Z-scored spike event matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+
 ##### `calc_mask_shape_metrics`
 
 ```python
@@ -252,8 +299,11 @@ Calculates shape metrics for the mask.
 
 - `input_files`: DataFrame of input file paths
 - `rise_time_data`: List of rise time data
+- `fall_time_data`: List of fall time data
 - `fwhm_data`: List of FWHM data
 - `frpm_data`: List of firing rate data
+- `peak_amplitude_data`: List of peak amplitude data
+- `peak_to_peak_data`: List of inter-spike interval data
 - `mask_metrics_data`: List of mask shape metrics
 - `silhouette_scores_data`: List of silhouette scores
 
@@ -341,6 +391,63 @@ Calculates the firing rate per minute (FRPM) for z-scored spike event data.
 
 - `frpm (float)`: Average firing rate per minute for the dataset
 - `spike_dict (dict)`: Dictionary containing firing rates for each neuron
+
+### `calc_fall_tm`
+
+```python
+calc_fall_tm(calcium_signals, spike_zscores, zscore_threshold=3, baseline_fraction=0.1)
+```
+
+Calculates the fall time of calcium signals (time from peak to return to baseline).
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix with neurons as rows and time points as columns
+- `spike_zscores (ndarray)`: Z-scored spike signal matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+- `baseline_fraction (float)`: Fraction of peak amplitude to consider as returned to baseline (default 0.1 = 10%)
+
+**Returns:**
+
+- `fall_times (dict)`: Dictionary of fall times (in frames) for each neuron
+- `fall_positions (dict)`: Dictionary of peak positions corresponding to the fall times
+
+### `calc_peak_amplitude`
+
+```python
+calc_peak_amplitude(calcium_signals, spike_zscores, zscore_threshold=3)
+```
+
+Calculates the amplitude (height) of each calcium transient peak.
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix with neurons as rows and time points as columns
+- `spike_zscores (ndarray)`: Z-scored spike signal matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+
+**Returns:**
+
+- `peak_amplitudes (dict)`: Dictionary of peak amplitude values (baseline-subtracted) for each neuron
+- `peak_positions (dict)`: Dictionary of positions of each peak
+
+### `calc_peak_to_peak`
+
+```python
+calc_peak_to_peak(calcium_signals, spike_zscores, zscore_threshold=3)
+```
+
+Calculates the inter-spike intervals (peak-to-peak distances) for each neuron.
+
+**Arguments:**
+
+- `calcium_signals (ndarray)`: Calcium signal matrix with neurons as rows and time points as columns
+- `spike_zscores (ndarray)`: Z-scored spike signal matrix
+- `zscore_threshold (float)`: Z-score threshold for spike detection
+
+**Returns:**
+
+- `inter_spike_intervals (dict)`: Dictionary of intervals (in frames) between consecutive peaks for each neuron
 
 ### `calc_mask_shape_metrics`
 

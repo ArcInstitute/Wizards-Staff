@@ -19,6 +19,9 @@ from wizards_staff.wizards.spellbook import (
     calc_rise_tm as ws_calc_rise_tm,
     calc_fwhm_spikes as ws_calc_fwhm_spikes,
     calc_frpm as ws_calc_frpm,
+    calc_fall_tm as ws_calc_fall_tm,
+    calc_peak_amplitude as ws_calc_peak_amplitude,
+    calc_peak_to_peak as ws_calc_peak_to_peak,
     calc_mask_shape_metrics as ws_calc_mask_shape_metrics,
 )
 
@@ -37,8 +40,11 @@ class Shard:
     _input_items: dict = field(default_factory=dict)
     _logger: Optional[logging.Logger] = field(default=None, init=False)
     _rise_time_data: list = field(default_factory=list, init=False)
+    _fall_time_data: list = field(default_factory=list, init=False)
     _fwhm_data: list = field(default_factory=list, init=False)
     _frpm_data: list = field(default_factory=list, init=False)
+    _peak_amplitude_data: list = field(default_factory=list, init=False)
+    _peak_to_peak_data: list = field(default_factory=list, init=False)
     _mask_metrics_data: list = field(default_factory=list, init=False)
     _silhouette_scores_data: list = field(default_factory=list, init=False)
     
@@ -137,6 +143,27 @@ class Shard:
             zscored_spike_events, filtered_idx, frate, *args, **kwargs
         )
 
+    @wraps(ws_calc_fall_tm)
+    def calc_fall_tm(self, calcium_signals, spike_zscores, *args, **kwargs
+                     ) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
+        return ws_calc_fall_tm(
+            calcium_signals, spike_zscores, *args, **kwargs
+        )
+
+    @wraps(ws_calc_peak_amplitude)
+    def calc_peak_amplitude(self, calcium_signals, spike_zscores, *args, **kwargs
+                            ) -> Tuple[Dict[int, List[float]], Dict[int, List[int]]]:
+        return ws_calc_peak_amplitude(
+            calcium_signals, spike_zscores, *args, **kwargs
+        )
+
+    @wraps(ws_calc_peak_to_peak)
+    def calc_peak_to_peak(self, calcium_signals, spike_zscores, *args, **kwargs
+                          ) -> Dict[int, List[int]]:
+        return ws_calc_peak_to_peak(
+            calcium_signals, spike_zscores, *args, **kwargs
+        )
+
     @wraps(ws_calc_mask_shape_metrics)
     def calc_mask_shape_metrics(self, *args, **kwargs) -> Dict[str, float]:
         return ws_calc_mask_shape_metrics(self.get_input('mask'), *args, **kwargs)
@@ -163,12 +190,24 @@ class Shard:
         return self._rise_time_data
     
     @property
+    def fall_time_data(self):
+        return self._fall_time_data
+    
+    @property
     def fwhm_data(self):
         return self._fwhm_data
     
     @property
     def frpm_data(self):
         return self._frpm_data
+
+    @property
+    def peak_amplitude_data(self):
+        return self._peak_amplitude_data
+    
+    @property
+    def peak_to_peak_data(self):
+        return self._peak_to_peak_data
 
     @property
     def mask_metrics_data(self):

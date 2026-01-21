@@ -224,6 +224,203 @@ def calc_frpm(zscored_spike_events: np.ndarray, neuron_ids: np.ndarray, fps: int
     
     return frpm, spike_dict
 
+def calc_fall_tm(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
+                 zscore_threshold: float = 3, baseline_fraction: float = 0.1
+                 ) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
+    """
+    Calculates the fall time of calcium signals (time from peak to return to baseline).
+    
+    Args:
+        calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
+        spike_zscores: Z-scored spike signal matrix.
+        zscore_threshold: Z-score threshold for spike detection.
+        baseline_fraction: Fraction of peak amplitude to consider as returned to baseline (default 0.1 = 10%).
+    
+    Returns:
+        fall_times: Dictionary of fall times (in frames) for each neuron.
+        fall_positions: Dictionary of peak positions corresponding to the fall times.
+    """
+    fall_times = {}
+    fall_positions = {}
+    
+    # Iterate over each neuron
+    for neuron_idx in range(calcium_signals.shape[0]):
+        # Identify spike events based on z-score threshold
+        spikes_above_threshold = spike_zscores[neuron_idx] >= zscore_threshold
+        calcium_trace = calcium_signals[neuron_idx]
+        
+        neuron_fall_times = []
+        neuron_fall_positions = []
+        
+        index = 0
+        # Loop through the calcium signal to find fall times
+        while index < len(spikes_above_threshold) - 10:
+            if spikes_above_threshold[index]:
+                # Find the peak (same logic as calc_rise_tm)
+                j = index + 1
+                prev_calcium = calcium_trace[index]
+                
+                while j < len(calcium_trace) - 2 and calcium_trace[j] >= prev_calcium:
+                    prev_calcium = calcium_trace[j]
+                    j += 1
+                
+                # j-1 is the peak position, prev_calcium is the peak value
+                peak_pos = j - 1
+                peak_value = prev_calcium
+                baseline_value = calcium_trace[index]
+                
+                # Calculate threshold for "return to baseline" (baseline + fraction of amplitude)
+                fall_threshold = baseline_value + baseline_fraction * (peak_value - baseline_value)
+                
+                # Find when signal falls below threshold
+                fall_time = 0
+                k = peak_pos + 1
+                while k < len(calcium_trace) - 2 and calcium_trace[k] >= fall_threshold:
+                    fall_time += 1
+                    k += 1
+                
+                # Record the fall time and peak position
+                neuron_fall_times.append(fall_time)
+                neuron_fall_positions.append(peak_pos)
+                index = k + 1
+            else:
+                index += 1
+        
+        # Store fall times and positions for each neuron
+        fall_times[neuron_idx] = neuron_fall_times
+        fall_positions[neuron_idx] = neuron_fall_positions
+    
+    return fall_times, fall_positions
+
+
+def calc_peak_amplitude(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
+                        zscore_threshold: float = 3, dff_data: np.ndarray = None
+                        ) -> Tuple[Dict[int, List[float]], Dict[int, List[int]]]:
+    """
+    Calculates the amplitude (height) of each calcium transient peak.
+    
+    Uses deconvolved calcium signals for spike detection/timing, but measures
+    amplitudes from raw ΔF/F₀ data if provided (recommended for interpretable units).
+    
+    Args:
+        calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
+                        Used for spike detection and peak finding.
+        spike_zscores: Z-scored spike signal matrix.
+        zscore_threshold: Z-score threshold for spike detection.
+        dff_data: Optional raw ΔF/F₀ data matrix. If provided, amplitudes are measured
+                 from this data (in ΔF/F₀ units). If None, amplitudes are measured
+                 from deconvolved calcium_signals (arbitrary units).
+    
+    Returns:
+        peak_amplitudes: Dictionary of peak amplitude values (baseline-subtracted) for each neuron.
+                        Units are ΔF/F₀ if dff_data provided, otherwise arbitrary deconvolved units.
+        peak_positions: Dictionary of positions of each peak.
+    """
+    peak_amplitudes = {}
+    peak_positions = {}
+    
+    # Use raw ΔF/F₀ for amplitude measurement if provided, otherwise use deconvolved signal
+    amplitude_source = dff_data if dff_data is not None else calcium_signals
+    
+    # Iterate over each neuron
+    for neuron_idx in range(calcium_signals.shape[0]):
+        # Identify spike events based on z-score threshold
+        spikes_above_threshold = spike_zscores[neuron_idx] >= zscore_threshold
+        calcium_trace = calcium_signals[neuron_idx]
+        amplitude_trace = amplitude_source[neuron_idx]
+        
+        neuron_peak_amplitudes = []
+        neuron_peak_positions = []
+        
+        index = 0
+        # Loop through the calcium signal to find peak amplitudes
+        while index < len(spikes_above_threshold) - 10:
+            if spikes_above_threshold[index]:
+                # Find the peak using deconvolved signal (better for timing)
+                j = index + 1
+                prev_calcium = calcium_trace[index]
+                
+                while j < len(calcium_trace) - 2 and calcium_trace[j] >= prev_calcium:
+                    prev_calcium = calcium_trace[j]
+                    j += 1
+                
+                # j-1 is the peak position
+                peak_pos = j - 1
+                
+                # Measure amplitude from the amplitude source (raw ΔF/F₀ or deconvolved)
+                baseline_value = amplitude_trace[index]
+                peak_value = amplitude_trace[peak_pos]
+                amplitude = peak_value - baseline_value
+                
+                # Record the amplitude and position
+                neuron_peak_amplitudes.append(amplitude)
+                neuron_peak_positions.append(peak_pos)
+                index = j + 1
+            else:
+                index += 1
+        
+        # Store amplitudes and positions for each neuron
+        peak_amplitudes[neuron_idx] = neuron_peak_amplitudes
+        peak_positions[neuron_idx] = neuron_peak_positions
+    
+    return peak_amplitudes, peak_positions
+
+
+def calc_peak_to_peak(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
+                      zscore_threshold: float = 3) -> Dict[int, List[int]]:
+    """
+    Calculates the inter-spike intervals (peak-to-peak distances) for each neuron.
+    
+    Args:
+        calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
+        spike_zscores: Z-scored spike signal matrix.
+        zscore_threshold: Z-score threshold for spike detection.
+    
+    Returns:
+        inter_spike_intervals: Dictionary of intervals (in frames) between consecutive peaks for each neuron.
+    """
+    inter_spike_intervals = {}
+    
+    # First, get peak positions using the same logic as other functions
+    # Iterate over each neuron
+    for neuron_idx in range(calcium_signals.shape[0]):
+        # Identify spike events based on z-score threshold
+        spikes_above_threshold = spike_zscores[neuron_idx] >= zscore_threshold
+        calcium_trace = calcium_signals[neuron_idx]
+        
+        peak_positions = []
+        
+        index = 0
+        # Loop through the calcium signal to find peak positions
+        while index < len(spikes_above_threshold) - 10:
+            if spikes_above_threshold[index]:
+                # Find the peak (same logic as calc_rise_tm)
+                j = index + 1
+                prev_calcium = calcium_trace[index]
+                
+                while j < len(calcium_trace) - 2 and calcium_trace[j] >= prev_calcium:
+                    prev_calcium = calcium_trace[j]
+                    j += 1
+                
+                # j-1 is the peak position
+                peak_pos = j - 1
+                peak_positions.append(peak_pos)
+                index = j + 1
+            else:
+                index += 1
+        
+        # Calculate inter-spike intervals (differences between consecutive peaks)
+        if len(peak_positions) >= 2:
+            intervals = [peak_positions[i+1] - peak_positions[i] 
+                        for i in range(len(peak_positions) - 1)]
+        else:
+            intervals = []  # Need at least 2 peaks to calculate intervals
+        
+        inter_spike_intervals[neuron_idx] = intervals
+    
+    return inter_spike_intervals
+
+
 def calc_mask_shape_metrics(mask_image: np.ndarray) -> Dict[str, float]:
     """
     Loads a binary mask image and calculates roundness, diameter, and area of the masked spheroid/organoid.

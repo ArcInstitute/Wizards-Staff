@@ -13,7 +13,10 @@ import pandas as pd
 from scipy.stats import zscore
 from tqdm.notebook import tqdm
 ## package
-from wizards_staff.wizards.spellbook import calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_mask_shape_metrics, convert_f_to_cs
+from wizards_staff.wizards.spellbook import (
+    calc_rise_tm, calc_fwhm_spikes, calc_frpm, calc_fall_tm, 
+    calc_peak_amplitude, calc_peak_to_peak, calc_mask_shape_metrics, convert_f_to_cs
+)
 from wizards_staff.plotting import plot_kmeans_heatmap, plot_cluster_activity, plot_spatial_activity_map, plot_dff_activity
 from wizards_staff.pwc import run_pwc
 from wizards_staff.metadata import append_metadata_to_dfs
@@ -190,6 +193,32 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
         zscore_threshold=zscore_threshold
     )
 
+    # Calculate fall time
+    fall_tm, fall_tm_pos = shard.calc_fall_tm(
+        calcium_signals_filtered,
+        zscored_spike_events_filtered,
+        zscore_threshold=zscore_threshold
+    )
+
+    # Get raw ΔF/F₀ data filtered by spatial filtering for amplitude measurement
+    dff_data_raw = shard.get_input('dff_dat', req=True)
+    dff_data_filtered = dff_data_raw[filtered_idx, :]
+
+    # Calculate peak amplitude (using raw ΔF/F₀ for interpretable units)
+    peak_amp, peak_pos = shard.calc_peak_amplitude(
+        calcium_signals_filtered,
+        zscored_spike_events_filtered,
+        zscore_threshold=zscore_threshold,
+        dff_data=dff_data_filtered
+    )
+
+    # Calculate peak-to-peak intervals (inter-spike intervals)
+    peak_to_peak = shard.calc_peak_to_peak(
+        calcium_signals_filtered,
+        zscored_spike_events_filtered,
+        zscore_threshold=zscore_threshold
+    )
+
     # Store the results in the respective lists
     for neuron_idx, rise_times in rise_tm.items():
         shard._rise_time_data.append({
@@ -214,6 +243,29 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
             'Sample': shard.sample_name,
             'Neuron Index': neuron_idx,
             'Firing Rate Per Min': frpm_value
+        })
+
+    for neuron_idx, fall_times in fall_tm.items():
+        shard._fall_time_data.append({
+            'Sample': shard.sample_name,
+            'Neuron': neuron_idx,
+            'Fall Times': fall_times,
+            'Fall Positions': fall_tm_pos[neuron_idx]
+        })
+
+    for neuron_idx, amplitudes in peak_amp.items():
+        shard._peak_amplitude_data.append({
+            'Sample': shard.sample_name,
+            'Neuron': neuron_idx,
+            'Peak Amplitudes': amplitudes,
+            'Peak Positions': peak_pos[neuron_idx]
+        })
+
+    for neuron_idx, intervals in peak_to_peak.items():
+        shard._peak_to_peak_data.append({
+            'Sample': shard.sample_name,
+            'Neuron': neuron_idx,
+            'Inter-Spike Intervals': intervals
         })
 
     # Calculate mask metrics and store them      
