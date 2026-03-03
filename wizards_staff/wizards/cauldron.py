@@ -6,6 +6,7 @@ import logging
 import warnings
 from typing import Tuple
 from functools import partial
+from multiprocessing import get_context
 # joblib is imported locally in run_all when threads > 1
 ## 3rd party
 import numpy as np
@@ -27,12 +28,24 @@ from wizards_staff.wizards.shard import Shard
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # functions
-def run_all(orb: "Orb", frate: int=None, zscore_threshold: int=3, 
-            percentage_threshold: float=0.2, p_th: float=75, min_clusters: int=2, 
-            max_clusters: int=10, random_seed: int=1111111, group_name: str=None, 
-            poly: bool=False, size_threshold: int=20000, show_plots: bool=False, 
-            save_files: bool=False, output_dir: str='wizards_staff_outputs', 
-            threads: int=1, debug: bool=False, **kwargs) -> None:
+def run_all(orb: "Orb", 
+            frate: int=None, 
+            zscore_threshold: int=3, 
+            percentage_threshold: float=0.2,
+            p_th: float=75, 
+            min_clusters: int=2, 
+            max_clusters: int=10, 
+            random_seed: int=1111111, 
+            group_name: str=None, 
+            poly: bool=False, 
+            size_threshold: int=20000, 
+            show_plots: bool=False, 
+            save_files: bool=False, 
+            output_dir: str='wizards_staff_outputs', 
+            threads: int=1, 
+            debug: bool=False, 
+            **kwargs
+            ) -> None:
     """
     Process the results folder, computes metrics, and stores them in DataFrames.
 
@@ -129,11 +142,22 @@ def run_all(orb: "Orb", frate: int=None, zscore_threshold: int=3,
         orb.save_results(output_dir)
         print('Results saved.', flush=True)
 
-def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_threshold: float, 
-             p_th: float, min_clusters: int, max_clusters: int, random_seed: int, 
-             size_threshold: int, group_name: str = None, poly: bool = False,
-             show_plots: bool = True, save_files: bool = True, 
-             output_dir: str = 'wizard_staff_outputs') -> Shard:
+def _run_all(shard: Shard, 
+            #  os_environ: dict,
+             frate: int, 
+             zscore_threshold: int, 
+             percentage_threshold: float, 
+             p_th: float, 
+             min_clusters: int, 
+             max_clusters: int, 
+             random_seed: int, 
+             size_threshold: int,
+             group_name: str = None, 
+             poly: bool = False,
+             show_plots: bool = True, 
+             save_files: bool = True, 
+             output_dir: str = 'wizard_staff_outputs'
+             ) -> Shard:
     """
     Process each shard of the Orb and compute metrics.
     Args:
@@ -141,6 +165,10 @@ def _run_all(shard: Shard, frate: int, zscore_threshold: int, percentage_thresho
     Returns:
         shard: The updated shard object
     """    
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
     shard._logger.info(f'Processing shard: {shard.sample_name}')
 
     # Get frame rate from metadata if not explicitly provided
