@@ -81,6 +81,13 @@ def run_pwc(orb: "Orb", group_name: str, poly: bool=False, p_th: float=75,
             plot=False, 
             silence=True
         )
+        if not filtered_idx:
+            orb._logger.warning(
+                f'No accepted components for {shard.sample_name} '
+                f'(cnm_idx was empty or all neurons were filtered out). Skipping...'
+            )
+            d_dff.pop(shard.sample_name, None)
+            continue
         d_nspIDs[shard.sample_name] = filtered_idx
 
     # Filter group keys to ensure that only those with valid dF/F data and neuron IDs are retained.
