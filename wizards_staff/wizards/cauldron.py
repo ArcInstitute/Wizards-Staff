@@ -104,7 +104,8 @@ def run_all(orb: "Orb",
                 updated_shard = func(shard)
                 orb._shards[updated_shard.sample_name] = updated_shard
             except Exception as e:
-                print(f'WARNING: {e}', file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
     else:
         # Parallel processing using joblib for better numpy array handling
         from joblib import Parallel, delayed

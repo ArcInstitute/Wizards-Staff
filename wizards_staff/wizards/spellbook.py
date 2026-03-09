@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 ## 3rd party
 import logging
 import numpy as np
+import scipy.linalg
 from skimage.io import imread 
 from skimage.measure import label, regionprops
 from caiman.source_extraction.cnmf import deconvolution
@@ -14,6 +15,36 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Disable logging for deconvolution
 logging.getLogger('caiman.source_extraction.cnmf.deconvolution').setLevel(logging.CRITICAL)
+
+# Patch CaImAn's estimate_time_constant for scipy >=1.14 compatibility.
+# Newer scipy refactored toeplitz() to use batched broadcasting, which fails
+# when CaImAn passes 2D column vectors (e.g. shape (7,1) and (2,1)) instead
+# of 1D arrays. We flatten the slices before calling toeplitz.
+_original_estimate_time_constant = deconvolution.estimate_time_constant
+
+def _patched_estimate_time_constant(fluor, p=2, sn=None, lags=5, fudge_factor=1.):
+    if sn is None:
+        sn = deconvolution.GetSn(fluor)
+
+    lags += p
+    xc = deconvolution.axcov(fluor, lags)
+    xc = xc[:, np.newaxis]
+
+    A = scipy.linalg.toeplitz(
+        xc[lags + np.arange(lags)].flatten(),
+        xc[lags + np.arange(p)].flatten()
+    ) - sn**2 * np.eye(lags, p)
+    g = np.linalg.lstsq(A, xc[lags + 1:], rcond=None)[0]
+    gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
+    gr = (gr + gr.conjugate()) / 2.
+    np.random.seed(45)
+    gr[gr > 1] = 0.95 + np.random.normal(0, 0.01, np.sum(gr > 1))
+    gr[gr < 0] = 0.15 + np.random.normal(0, 0.01, np.sum(gr < 0))
+    g = np.poly(fudge_factor * gr)
+    g = -g[1:]
+    return g.flatten()
+
+deconvolution.estimate_time_constant = _patched_estimate_time_constant
 
 # functions
 def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[0.25, 0.5]
