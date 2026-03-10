@@ -7,6 +7,9 @@ jobs:
   create-asana-task:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -21,36 +24,45 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_CREATOR: ${{ github.event.issue.user.login }}
         run: |
           python - <<EOF
           import os
+          import json
           import asana
           
-          # Configure the client
           configuration = asana.Configuration()
           configuration.access_token = os.environ['ASANA_TOKEN']
           api_client = asana.ApiClient(configuration)
           
-          # Create tasks API instance
           tasks_api_instance = asana.TasksApi(api_client)
             
-          # Parent task GID for "Issues" task
           issues_parent_task_gid = '1211152257319662'
-          
-          # Create the subtask under the "Issues" parent task
-          # Assignee GID for jesseh
           assignee_gid = '1204867663578255'
+          
+          # Look up the issue creator in the GitHub-to-Asana user mapping
+          creator_github = os.environ.get('ISSUE_CREATOR', '')
+          creator_asana_gid = None
+          try:
+              with open('.github/github-to-asana-users.json') as f:
+                  user_map = json.load(f)
+              creator_asana_gid = user_map.get(creator_github)
+              if creator_asana_gid:
+                  print(f"Mapped GitHub user '{creator_github}' to Asana GID '{creator_asana_gid}'")
+              else:
+                  print(f"No Asana mapping found for GitHub user '{creator_github}', skipping collaborator")
+          except FileNotFoundError:
+              print("User mapping file not found, skipping collaborator")
           
           body = {
               "data": {
                   "name": os.environ['ISSUE_TITLE'],
                   "notes": f"{os.environ.get('ISSUE_BODY', '')}\n\nGitHub Issue: {os.environ['ISSUE_URL']}",
-                  **({"assignee": assignee_gid} if assignee_gid else {})
+                  **({"assignee": assignee_gid} if assignee_gid else {}),
+                  **({"followers": [creator_asana_gid]} if creator_asana_gid else {}),
               }
           }
           
-          opts = {}
-          
-          result = tasks_api_instance.create_subtask_for_task(body, issues_parent_task_gid, opts)
+          result = tasks_api_instance.create_subtask_for_task(body, issues_parent_task_gid, {})
           print(f"Asana subtask created successfully! Task GID: {result['gid']}")
           EOF
