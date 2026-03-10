@@ -199,6 +199,13 @@ def calc_pwc_mn(d_k_in_groups: dict, d_dff: dict, d_nspIDs: dict, dff_cut: float
             tmp_dat_filt = tmp_dat[nsp_ids, :]
             nsp_ids_filt = nsp_ids
 
+            if len(nsp_ids_uniq) < 2:
+                warnings.warn(
+                    f"Sample '{key}' has only {len(nsp_ids_uniq)} neuron(s) after "
+                    f"filtering — skipping pairwise correlation (need at least 2)."
+                )
+                continue
+
             # Apply dF/F threshold
             tmp_dat_filt[tmp_dat_filt < dff_cut] = 0
 
