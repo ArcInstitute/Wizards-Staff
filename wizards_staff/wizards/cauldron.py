@@ -109,16 +109,15 @@ def run_all(orb: "Orb",
     else:
         # Parallel processing using joblib for better numpy array handling
         from joblib import Parallel, delayed
+        safe_func = partial(_run_all_safe, func=func)
         logging.disable(logging.CRITICAL)
         try:
             results = Parallel(n_jobs=threads, prefer="processes")(
-                delayed(func)(shard) for shard in tqdm(shards, desc=desc)
+                delayed(safe_func)(shard) for shard in tqdm(shards, desc=desc)
             )
             for updated_shard in results:
                 if updated_shard is not None:
                     orb._shards[updated_shard.sample_name] = updated_shard
-        except Exception as e:
-            print(f'WARNING: {e}', file=sys.stderr)
         finally:
             logging.disable(logging.NOTSET)
     
@@ -142,6 +141,22 @@ def run_all(orb: "Orb",
         print(f'Saving results to {output_dir}...', flush=True)
         orb.save_results(output_dir)
         print('Results saved.', flush=True)
+
+def _run_all_safe(shard: Shard, func) -> Shard:
+    """
+    Wrapper that catches per-shard exceptions during parallel processing,
+    so one failed shard doesn't discard all successfully processed results.
+    """
+    try:
+        return func(shard)
+    except Exception as e:
+        import traceback
+        print(
+            f'WARNING: Error processing shard {shard.sample_name}: {e}',
+            file=sys.stderr
+        )
+        traceback.print_exc(file=sys.stderr)
+        return None
 
 def _run_all(shard: Shard, 
             #  os_environ: dict,
