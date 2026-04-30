@@ -4,13 +4,14 @@ import os
 import sys
 import random
 import warnings
-from typing import List, Tuple, Optional
+from typing import Any, List, Optional, Sequence, Tuple
 ## 3rd party
 import numpy as np
 import pandas as pd
 from skimage.io import imread
 from sklearn.metrics import silhouette_score
 from scipy.cluster.vq import kmeans2
+from scipy.signal import find_peaks
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator 
@@ -528,10 +529,15 @@ def plot_dff_activity(dff_dat: np.ndarray, cnm_idx: np.array, frate: int, sample
     """
     # Ensure valid end_tp
     end_tp = end_tp if end_tp >= 0 else dff_dat.shape[1]
-    
-    # Sort the data by neuron IDs and select the time range
-    sorted_indices = np.argsort(cnm_idx)
-    dff_dat_sorted = dff_dat[sorted_indices, begin_tp:end_tp]
+
+    # Select only the accepted-neuron rows of dff_dat (sorted by neuron ID).
+    # Bug fix: previously this used `np.argsort(cnm_idx)` directly as the row
+    # selector, which picked positions 0..N rather than the actual cnm_idx
+    # values — so the plot showed the wrong neurons (and notably ignored
+    # outlier removal even when `cnm_idx` had been pre-cleaned).
+    cnm_idx_arr = np.asarray(cnm_idx)
+    sorted_neuron_ids = np.sort(cnm_idx_arr)
+    dff_dat_sorted = dff_dat[sorted_neuron_ids, begin_tp:end_tp]
     
     # Determine the number of neurons to plot
     if n_stop is None or n_stop < 0:
@@ -594,6 +600,482 @@ def plot_dff_activity(dff_dat: np.ndarray, cnm_idx: np.array, frate: int, sample
         plt.show()
     else:
         plt.close()
+
+
+def plot_neuron_outliers(
+    outlier_result: dict,
+    sample_name: str,
+    show_plots: bool = True,
+    save_files: bool = False,
+    output_dir: str = 'wizard_staff_outputs',
+    figsize: tuple = (14, 7),
+) -> plt.Figure:
+    """Render per-neuron PNR diagnostics with low-PNR outliers highlighted.
+
+    Two stacked panels:
+
+    1. Per-neuron PNR bars (sorted by component index) with flagged
+       neurons drawn in red.
+    2. Histogram of ``log(pnr + epsilon)`` annotated with the population
+       median, the modified Z-score threshold, and the location of any
+       flagged neurons.
+
+    Args:
+        outlier_result: Return value of
+            :func:`wizards_staff.stats.outliers.detect_low_pnr_neurons`.
+            Expected to expose a ``neuron_scores`` DataFrame with
+            ``pnr``, ``log_pnr_modified_zscore``, ``is_low_pnr`` and
+            ``reason`` columns.
+        sample_name: Used in the title and saved-file naming.
+        show_plots: Display the figure interactively.
+        save_files: Write the figure to ``output_dir/outlier_plots/``.
+        output_dir: Parent directory for saved PNGs.
+        figsize: Figure size ``(width, height)`` in inches.
+
+    Returns:
+        The matplotlib :class:`~matplotlib.figure.Figure`, or ``None`` when
+        ``neuron_scores`` is empty.
+    """
+    scores = outlier_result["neuron_scores"]
+    if scores.empty:
+        return None
+
+    threshold = outlier_result.get("threshold", 3.5)
+
+    # Tolerate the legacy schema (``is_outlier`` + ``max_dff``/``std_dff``)
+    # so external callers that still construct outlier dicts in the old
+    # shape don't crash. The new PNR schema is preferred when present.
+    if "is_low_pnr" in scores.columns:
+        flagged_col = "is_low_pnr"
+    else:
+        flagged_col = "is_outlier"
+    flagged = scores[flagged_col].values.astype(bool)
+    n_neurons = len(scores)
+    x = np.arange(n_neurons)
+
+    color_normal = "#3370d4"
+    color_outlier = "#d63031"
+
+    fig, axes = plt.subplots(2, 1, figsize=figsize, constrained_layout=True)
+
+    # ── Panel 1: per-neuron PNR bars ─────────────────────────────────
+    ax_bar = axes[0]
+    if "pnr" in scores.columns:
+        vals = scores["pnr"].values
+        ylabel = "Peak-to-noise ratio (PNR)"
+        title = (
+            f"Per-neuron PNR for {sample_name} "
+            f"({n_neurons} neurons; {int(flagged.sum())} flagged as low-PNR)"
+        )
+    else:
+        # Legacy fallback so this plot keeps working with old callers.
+        vals = scores.get("max_dff", pd.Series(np.zeros(n_neurons))).values
+        ylabel = "Max ΔF/F"
+        title = f"Per-neuron max ΔF/F for {sample_name}"
+
+    bar_colors = np.where(flagged, color_outlier, color_normal)
+    ax_bar.bar(x, vals, color=bar_colors, width=1.0, edgecolor="none")
+    ax_bar.set_title(title, fontweight="bold", fontsize=11)
+    ax_bar.set_ylabel(ylabel)
+    ax_bar.set_xlabel("Neuron index")
+    tick_step = max(1, n_neurons // 20)
+    ax_bar.set_xticks(x[::tick_step])
+    ax_bar.set_xticklabels(scores["component_idx"].values[::tick_step])
+    ax_bar.set_xlim(-0.5, n_neurons - 0.5)
+
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    bar_legend = [
+        Patch(facecolor=color_outlier, label="Low-PNR / flagged"),
+        Patch(facecolor=color_normal,  label="Kept neurons"),
+    ]
+    ax_bar.legend(handles=bar_legend, loc="upper right", framealpha=0.9,
+                  fontsize=9)
+
+    # ── Panel 2: log(PNR) distribution with threshold annotation ─────
+    ax_hist = axes[1]
+    if "pnr" in scores.columns:
+        # Match the detector's own log transform (epsilon = 1e-3) so the
+        # threshold line on this plot matches the threshold the detector
+        # actually applied.
+        log_pnr = np.log(np.maximum(scores["pnr"].values, 0.0) + 1e-3)
+        median = float(np.median(log_pnr))
+        mad = float(np.median(np.abs(log_pnr - median))) or 1e-12
+        cutoff = median - threshold * mad / 0.6745
+
+        ax_hist.hist(log_pnr, bins=min(40, max(10, n_neurons // 3)),
+                     color="#74b9ff", edgecolor="#2d3436", alpha=0.85)
+        ax_hist.axvline(median, color="#2d3436", linestyle=":", linewidth=1.2,
+                        label=f"Median = {median:.2f}")
+        ax_hist.axvline(cutoff, color=color_outlier, linestyle="--",
+                        linewidth=1.5,
+                        label=f"Low-PNR cutoff (mod Z = -{threshold})")
+        if flagged.any():
+            ymin, ymax = ax_hist.get_ylim()
+            tick_y = ymin + 0.05 * (ymax - ymin)
+            ax_hist.scatter(log_pnr[flagged],
+                            np.full(flagged.sum(), tick_y),
+                            marker="x", color=color_outlier, s=60,
+                            zorder=5, label="Flagged neurons")
+        ax_hist.set_xlabel("log(PNR + 1e-3)")
+        ax_hist.set_ylabel("Neuron count")
+        ax_hist.set_title("Population log(PNR) distribution",
+                          fontweight="bold", fontsize=11)
+        ax_hist.legend(loc="upper left", framealpha=0.9, fontsize=9)
+    else:
+        ax_hist.text(
+            0.5, 0.5,
+            "No PNR data available; outlier_result is in the legacy schema.",
+            ha="center", va="center", transform=ax_hist.transAxes,
+        )
+        ax_hist.set_axis_off()
+
+    if save_files:
+        output_dir = os.path.expanduser(output_dir)
+        out_sub = os.path.join(output_dir, "outlier_plots")
+        os.makedirs(out_sub, exist_ok=True)
+        fig_path = os.path.join(out_sub, f"{sample_name}_neuron-outliers.png")
+        fig.savefig(fig_path, bbox_inches="tight", dpi=150)
+
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig
+
+
+def _waveform_event_snippets(
+    trace: np.ndarray,
+    template: np.ndarray,
+    peak_height: float,
+    half_len: int,
+) -> list:
+    """Per-peak snippets and Pearson r vs template (same construction as ``detect_waveform_outliers``)."""
+    peaks, _ = find_peaks(trace, height=peak_height, distance=half_len)
+    t_norm = (template - template.mean()) / template.std()
+    events: list = []
+    for pk in peaks:
+        start = pk - half_len
+        end = start + len(template)
+        if start < 0 or end > len(trace):
+            continue
+        snippet = trace[start:end].copy()
+        std = snippet.std()
+        if std < 1e-10:
+            continue
+        snippet_z = (snippet - snippet.mean()) / std
+        r = np.corrcoef(snippet_z, t_norm)[0, 1]
+        events.append((r, snippet))
+    return events
+
+
+def plot_waveform_qc(
+    waveform_result: dict,
+    dff_dat: np.ndarray,
+    filtered_idx: np.ndarray,
+    fps: float = 30.0,
+    sample_name: str = "",
+    n_examples: int = 3,
+    show_plots: bool = True,
+    save_files: bool = False,
+    output_dir: str = 'wizard_staff_outputs',
+    figsize: tuple = (14, 4.6),
+    peak_height: float = 0.1,
+) -> Optional[plt.Figure]:
+    """Show example transients from flagged vs not-flagged neurons with template overlay.
+
+    Each column shows one neuron. The trace is the event whose template correlation is
+    closest to the **median** across detected peaks (same construction as the QC score).
+
+    Parameters
+    ----------
+    waveform_result : dict
+        Return value of ``detect_waveform_outliers``.
+    dff_dat : np.ndarray
+        Full ΔF/F₀ matrix.
+    filtered_idx : np.ndarray
+        Spatial-filter indices.
+    fps : float
+        Frame rate in Hz.
+    sample_name : str
+        Used for titles and saved-file naming.
+    n_examples : int
+        Number of example neurons to show per category.
+    peak_height : float
+        Peak detection threshold; should match ``detect_waveform_outliers`` (default 0.1).
+    show_plots, save_files, output_dir, figsize
+        Standard plotting options.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+    """
+    scores = waveform_result.get("neuron_scores")
+    template = waveform_result.get("template", np.array([]))
+    if scores is None or scores.empty or len(template) == 0:
+        return None
+
+    flagged_mask = waveform_result["flagged_mask"]
+    traces = dff_dat[filtered_idx, :]
+    thr = float(waveform_result.get("threshold", 3.5))
+    n_flagged = int(waveform_result["n_flagged"])
+
+    scorable = ~scores["median_template_corr"].isna()
+    flagged_scorable = flagged_mask & scorable.values
+    clean_scorable = (~flagged_mask) & scorable.values
+
+    n_flag_show = min(n_examples, int(flagged_scorable.sum()))
+    n_clean_show = min(n_examples, int(clean_scorable.sum()))
+    if n_flag_show == 0 and n_clean_show == 0:
+        return None
+    n_cols = max(n_flag_show + n_clean_show, 1)
+
+    half_len = len(template) // 2
+
+    fig, axes = plt.subplots(1, n_cols, figsize=figsize, squeeze=False)
+    axes = axes.ravel()
+
+    def _plot_neuron(ax, idx_in_filtered, label_prefix: str, color: str, col_idx: int):
+        trace = traces[idx_in_filtered]
+        comp = int(scores.iloc[idx_in_filtered]["component_idx"])
+        events = _waveform_event_snippets(trace, template, peak_height, half_len)
+
+        if not events:
+            ax.set_title(f"{label_prefix} · component {comp}\n(no peaks)", fontsize=9)
+            ax.text(0.5, 0.5, "No peaks", ha="center", va="center", transform=ax.transAxes)
+            return
+
+        corrs = np.array([e[0] for e in events])
+        median_of_corrs = float(np.median(corrs))
+        i_main = int(np.argmin(np.abs(corrs - median_of_corrs)))
+        _, snippet = events[i_main]
+        t_snip = np.arange(len(snippet)) / fps * 1000
+        ax.plot(t_snip, snippet, color=color, linewidth=1.5, label=r"$\Delta$F/F$_0$")
+        scale = snippet.max() - snippet.min()
+        if scale > 0:
+            scaled_template = template / template.max() * scale + snippet.min()
+            ax.plot(
+                t_snip, scaled_template, "--k", linewidth=1, alpha=0.55,
+                label="Template (scaled)",
+            )
+        ax.set_title(
+            f"{label_prefix} · component {comp}\n"
+            f"median r = {median_of_corrs:.2f} · {len(corrs)} events",
+            fontsize=9,
+        )
+        ax.set_ylabel(r"$\Delta$F/F$_0$")
+        # Shared x label via fig.supxlabel; hide per-axis x labels to reduce clutter
+        ax.tick_params(axis="x", labelbottom=True)
+        if col_idx == 0:
+            ax.legend(loc="upper left", fontsize=7, framealpha=0.92, borderpad=0.3)
+
+    col = 0
+    for fi in np.where(flagged_scorable)[0][:n_flag_show]:
+        _plot_neuron(axes[col], fi, "Flagged", "#d63031", col)
+        col += 1
+    for ci in np.where(clean_scorable)[0][:n_clean_show]:
+        _plot_neuron(axes[col], ci, "Not flagged", "#3370d4", col)
+        col += 1
+
+    for j in range(col, n_cols):
+        axes[j].set_visible(False)
+
+    fig.suptitle(
+        f"Waveform QC — {sample_name}  ({n_flagged} flagged)",
+        fontweight="bold", fontsize=11,
+    )
+    cap = (
+        f"Modified Z-scores vs other neurons (threshold={thr:g}), not a fixed r. "
+        f"Solid = transient with r nearest median across peaks; dashed = template scaled to snippet. "
+    )
+    if n_flagged == 0:
+        cap += "No waveform flags this sample. "
+    cap += "Spectral QC is separate (`is_waveform_outlier` vs `is_spectral_outlier`)."
+    fig.text(0.5, 0.035, cap, ha="center", va="bottom", fontsize=7.5, color="0.35")
+    fig.supxlabel("Time (ms)", fontsize=9)
+
+    fig.subplots_adjust(top=0.82, bottom=0.20, left=0.06, right=0.99, wspace=0.28)
+
+    if save_files:
+        output_dir = os.path.expanduser(output_dir)
+        out_sub = os.path.join(output_dir, "outlier_plots")
+        os.makedirs(out_sub, exist_ok=True)
+        fig_path = os.path.join(out_sub, f"{sample_name}_waveform-qc.png")
+        fig.savefig(fig_path, bbox_inches="tight", dpi=150)
+
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig
+
+
+def plot_spectral_qc(
+    spectral_result: dict,
+    dff_dat: np.ndarray,
+    filtered_idx: np.ndarray,
+    fps: float = 30.0,
+    sample_name: str = "",
+    n_examples: int = 3,
+    show_plots: bool = True,
+    save_files: bool = False,
+    output_dir: str = 'wizard_staff_outputs',
+    figsize: tuple = (14, 5),
+) -> Optional[plt.Figure]:
+    """Power-spectrum comparison: mean PSD of non-flagged neurons vs flagged examples.
+
+    Left panel: population-mean normalised PSD for neurons **not** flagged by spectral QC,
+    with the biological band shaded. Flagged panels overlay that mean (grey) behind the
+    individual trace (red) on a **shared** y-scale for direct comparison.
+
+    Parameters
+    ----------
+    spectral_result : dict
+        Return value of ``detect_spectral_outliers``.
+    dff_dat : np.ndarray
+        Full ΔF/F₀ matrix.
+    filtered_idx : np.ndarray
+        Spatial-filter indices.
+    fps : float
+        Frame rate in Hz.
+    sample_name : str
+        Used for titles and saved-file naming.
+    n_examples : int
+        Number of flagged-neuron PSD examples to show.
+    show_plots, save_files, output_dir, figsize
+        Standard plotting options.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+    """
+    scores = spectral_result.get("neuron_scores")
+    if scores is None or scores.empty:
+        return None
+
+    flagged_mask = spectral_result["flagged_mask"]
+    traces = dff_dat[filtered_idx, :]
+    n_frames = traces.shape[1]
+    freqs = np.fft.rfftfreq(n_frames, d=1.0 / fps)
+
+    bio_band = spectral_result.get("bio_band", (0.1, 2.0))
+    thr = float(spectral_result.get("threshold", 3.5))
+    bio_lo, bio_hi = float(bio_band[0]), float(bio_band[1])
+
+    def _norm_psd(trace_row: np.ndarray) -> np.ndarray:
+        pwr = np.abs(np.fft.rfft(trace_row)) ** 2
+        total = pwr[1:].sum()
+        if total > 0:
+            pwr = pwr / total
+        return pwr
+
+    clean_mask = ~flagged_mask
+    clean_power: Optional[np.ndarray] = None
+    if clean_mask.sum() > 0:
+        clean_power = np.zeros(len(freqs))
+        for i in np.where(clean_mask)[0]:
+            clean_power += _norm_psd(traces[i])
+        clean_power /= clean_mask.sum()
+
+    n_flag_show = min(n_examples, int(flagged_mask.sum()))
+    n_cols = 1 + n_flag_show
+
+    fig, axes = plt.subplots(1, n_cols, figsize=figsize, squeeze=False)
+    axes = axes.ravel()
+
+    # Shared log-y limits across all panels
+    y_stack: list = []
+    if clean_power is not None:
+        y_stack.append(clean_power[1:])
+    flagged_entries: list = []
+    for fi in np.where(flagged_mask)[0][:n_flag_show]:
+        pwr = _norm_psd(traces[fi])
+        flagged_entries.append((fi, pwr))
+        y_stack.append(pwr[1:])
+    if y_stack:
+        all_y = np.concatenate(y_stack)
+        pos = all_y[all_y > 0]
+        if len(pos):
+            y_max = float(np.max(pos)) * 1.5
+            y_min = max(float(np.min(pos)) * 0.4, 1e-20)
+        else:
+            y_min, y_max = 1e-10, 1.0
+    else:
+        y_min, y_max = 1e-10, 1.0
+
+    if clean_power is not None:
+        ax0 = axes[0]
+        ax0.semilogy(freqs[1:], clean_power[1:], color="#3370d4", linewidth=1.2,
+                     label="Mean PSD (not flagged)")
+        ax0.axvspan(bio_lo, bio_hi, alpha=0.15, color="green",
+                    label=f"Bio band ({bio_lo:g}–{bio_hi:g} Hz)")
+        ax0.set_title(
+            f"Mean PSD — not flagged (n={int(clean_mask.sum())})",
+            fontsize=10,
+        )
+        ax0.set_xlabel("Frequency (Hz)")
+        ax0.set_ylabel("Normalised power")
+        ax0.set_ylim(y_min, y_max)
+        ax0.legend(fontsize=8)
+    else:
+        axes[0].text(
+            0.5, 0.5, "No non-flagged neurons", ha="center", va="center",
+            transform=axes[0].transAxes,
+        )
+
+    for j, (fi, pwr) in enumerate(flagged_entries):
+        ax = axes[1 + j]
+        comp = int(scores.iloc[fi]["component_idx"])
+        frac_bio = float(scores.iloc[fi]["frac_biological_power"])
+        if clean_power is not None:
+            ax.semilogy(
+                freqs[1:], clean_power[1:], color="0.75", linewidth=1.0, alpha=0.85,
+                label="Mean not flagged",
+            )
+        ax.semilogy(freqs[1:], pwr[1:], color="#d63031", linewidth=1.2, label="Flagged neuron")
+        ax.axvspan(bio_lo, bio_hi, alpha=0.15, color="green")
+        ax.set_title(
+            f"Flagged — component {comp}\n"
+            f"bio={frac_bio:.2f} (fraction of total power in {bio_lo:g}–{bio_hi:g} Hz)",
+            fontsize=9,
+        )
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("Normalised power")
+        ax.set_ylim(y_min, y_max)
+        if j == 0:
+            ax.legend(fontsize=7, loc="best")
+
+    for i in range(1 + len(flagged_entries), len(axes)):
+        axes[i].set_visible(False)
+
+    n_flagged = int(spectral_result["n_flagged"])
+    fig.suptitle(
+        f"Spectral QC — {sample_name}  ({n_flagged} flagged)",
+        fontweight="bold", fontsize=11,
+    )
+    foot = (
+        f"Threshold (modified Z-score) = {thr:g}. "
+        "Spectral QC is independent from waveform QC — compare `is_spectral_outlier` "
+        "and `is_waveform_outlier` in `combine_neuron_qc` output."
+    )
+    fig.text(0.5, 0.02, foot, ha="center", fontsize=7.5, color="0.35")
+    plt.subplots_adjust(bottom=0.14)
+
+    if save_files:
+        output_dir = os.path.expanduser(output_dir)
+        out_sub = os.path.join(output_dir, "outlier_plots")
+        os.makedirs(out_sub, exist_ok=True)
+        fig_path = os.path.join(out_sub, f"{sample_name}_spectral-qc.png")
+        fig.savefig(fig_path, bbox_inches="tight", dpi=150)
+
+    if show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig
 
 
 # Metric configuration for plot_metric_by_group
@@ -1727,3 +2209,395 @@ def plot_baseline_vs_dosing_scatter(
         return None
     else:
         return fig
+
+
+def plot_neuron_dff_traces_with_events(
+    orb: Any,
+    well_column: str = "Well",
+    wells: Optional[Sequence[str]] = None,
+    samples: Optional[Sequence[str]] = None,
+    exclude_outlier_neurons: bool = True,
+    outlier_flag_col: str = "any_outlier",
+    p_th: float = 75.0,
+    size_threshold: int = 20000,
+    x_axis: str = "frames",
+    neurons_per_figure: int = 12,
+    fig_width: float = 11.0,
+    panel_height: float = 1.85,
+    event_bar_color: str = "0.45",
+    trace_color: str = "#2a9d8f",
+    show_plots: bool = True,
+    save_files: bool = False,
+    output_dir: str = "wizard_staff_outputs",
+    subdir: str = "dff_traces_with_events",
+) -> List[plt.Figure]:
+    """
+    For each sample (optionally filtered by well), plot one panel per **non-outlier**
+    neuron: ΔF/F₀ trace with grey rectangles above the trace marking each detected
+    event interval (FWHM backward→forward frames from the same pipeline as
+    ``orb.fwhm_data``).
+
+    Outlier neurons are dropped when ``exclude_outlier_neurons=True`` and
+    ``orb.outlier_data`` contains ``outlier_flag_col`` (default ``any_outlier``).
+
+    Spatial filtering (``filtered_idx``) is recomputed with ``p_th`` and
+    ``size_threshold`` so it matches a ``run_all`` call using the same values.
+
+    Parameters
+    ----------
+    orb : Orb
+        Must have run ``run_all()`` so ``fwhm_data`` (and ideally ``outlier_data``) exist.
+    well_column : str
+        Metadata column for well IDs (default ``"Well"``).
+    wells : sequence of str, optional
+        If set, only samples whose metadata ``well_column`` is in this list are plotted.
+    samples : sequence of str, optional
+        If set, only these sample names are plotted (must still match ``wells`` when given).
+    exclude_outlier_neurons : bool
+        Skip neurons flagged as outliers when QC data is available.
+    outlier_flag_col : str
+        Column in ``orb.outlier_data`` used as the exclusion flag.
+    p_th, size_threshold
+        Passed to ``shard.spatial_filtering`` (defaults match ``run_all``).
+    x_axis : str
+        ``"frames"`` (time point index) or ``"seconds"`` (uses metadata ``Frate`` per sample).
+    neurons_per_figure : int
+        Maximum neuron panels per figure; large wells are split across multiple figures.
+    fig_width, panel_height
+        Figure width (inches) and height per neuron row.
+    event_bar_color, trace_color
+        Matplotlib colors for event markers and traces.
+    show_plots, save_files, output_dir, subdir
+        Display and/or save under ``output_dir / subdir``.
+
+    Returns
+    -------
+    list of matplotlib.figure.Figure
+        One or more figures per sample (paginated by ``neurons_per_figure``).
+    """
+    if orb.fwhm_data is None:
+        raise ValueError("orb.fwhm_data is None; run run_all() first.")
+
+    md = orb.metadata
+    if well_column not in md.columns:
+        raise ValueError(f"Metadata has no column {well_column!r}.")
+
+    outlier_df = orb.outlier_data
+    fwhm_df = orb.fwhm_data
+
+    shard_by_name = {sh.sample_name: sh for sh in orb.shards}
+
+    if samples is not None:
+        target_samples = [s for s in samples if s in shard_by_name]
+    else:
+        target_samples = list(shard_by_name.keys())
+
+    if wells is not None:
+        well_set = set(wells)
+        allowed = set(
+            md.loc[md[well_column].isin(well_set), "Sample"].astype(str).unique()
+        )
+        target_samples = [s for s in target_samples if s in allowed]
+
+    figures: List[plt.Figure] = []
+
+    for sample_name in target_samples:
+        shard = shard_by_name.get(sample_name)
+        if shard is None:
+            continue
+
+        meta_row = md.loc[md["Sample"] == sample_name]
+        if meta_row.empty:
+            continue
+        well_val = str(meta_row[well_column].iloc[0])
+
+        dff = shard.get_input("dff_dat", req=True)
+        filtered_idx = shard.spatial_filtering(
+            p_th=p_th,
+            size_threshold=size_threshold,
+            plot=False,
+            silence=True,
+        )
+
+        frate = None
+        if x_axis == "seconds":
+            fr = meta_row["Frate"].iloc[0] if "Frate" in meta_row.columns else None
+            if fr is None:
+                raise ValueError("x_axis='seconds' requires 'Frate' in metadata.")
+            frate = float(fr)
+
+        oo = outlier_df[outlier_df["Sample"] == sample_name] if outlier_df is not None else None
+        outlier_components: set = set()
+        if (
+            exclude_outlier_neurons
+            and oo is not None
+            and not oo.empty
+            and outlier_flag_col in oo.columns
+        ):
+            outlier_components = set(
+                int(x)
+                for x in oo.loc[oo[outlier_flag_col] == True, "Neuron Index"].values  # noqa: E712
+            )
+
+        neuron_indices: List[int] = []
+        for i in range(len(filtered_idx)):
+            comp = int(filtered_idx[i])
+            if comp in outlier_components:
+                continue
+            neuron_indices.append(i)
+
+        if not neuron_indices:
+            continue
+
+        fw_s = fwhm_df[
+            (fwhm_df["Sample"] == sample_name)
+            & (fwhm_df["Neuron"].isin(neuron_indices))
+        ]
+
+        n_pages = int(np.ceil(len(neuron_indices) / float(neurons_per_figure)))
+        for page in range(n_pages):
+            sl = slice(page * neurons_per_figure, (page + 1) * neurons_per_figure)
+            page_neurons = neuron_indices[sl]
+
+            n_panels = len(page_neurons)
+            fig_h = max(2.5, n_panels * panel_height)
+            fig, axes = plt.subplots(
+                n_panels,
+                1,
+                figsize=(fig_width, fig_h),
+                sharex=True,
+                constrained_layout=True,
+            )
+            if n_panels == 1:
+                axes = [axes]
+
+            suptitle = (
+                f"Well {well_val} — {sample_name}\n"
+                f"ΔF/F₀ with event intervals (FWHM){'' if n_pages == 1 else f' (part {page + 1}/{n_pages})'}"
+            )
+            fig.suptitle(suptitle, fontsize=11)
+
+            for ax, loc_idx in zip(axes, page_neurons):
+                comp = int(filtered_idx[loc_idx])
+                trace = np.asarray(dff[comp, :]).ravel()
+                tvec = (
+                    np.arange(trace.shape[0], dtype=float)
+                    if frate is None
+                    else np.arange(trace.shape[0], dtype=float) / frate
+                )
+
+                ax.plot(tvec, trace, color=trace_color, linewidth=0.9, label="ΔF/F₀")
+
+                ev = fw_s[fw_s["Neuron"] == loc_idx]
+                ymax = float(np.nanmax(trace)) if trace.size else 1.0
+                ymin = float(np.nanmin(trace)) if trace.size else 0.0
+                yspan = max(ymax - ymin, 1e-9)
+                bar_y0 = ymax + 0.02 * yspan
+                bar_h = 0.035 * yspan
+
+                for _, er in ev.iterrows():
+                    b = er["FWHM Backward Positions"]
+                    f = er["FWHM Forward Positions"]
+                    if pd.isna(b) or pd.isna(f):
+                        continue
+                    b, f = int(b), int(f)
+                    x0 = float(b) if frate is None else b / frate
+                    x1 = float(f + 1) if frate is None else (f + 1) / frate
+                    rect = patches.Rectangle(
+                        (x0, bar_y0),
+                        x1 - x0,
+                        bar_h,
+                        linewidth=1.0,
+                        edgecolor=event_bar_color,
+                        facecolor="none",
+                        zorder=5,
+                    )
+                    ax.add_patch(rect)
+
+                ax.set_ylim(ymin - 0.03 * yspan, bar_y0 + bar_h + 0.08 * yspan)
+                ax.set_ylabel(f"n{loc_idx}")
+                ax.grid(True, alpha=0.35)
+                ax.tick_params(labelsize=8)
+
+            xlab = "Time point (frame)" if frate is None else "Time (s)"
+            axes[-1].set_xlabel(xlab)
+            fig.align_ylabels(axes)
+
+            if save_files:
+                output_dir_exp = os.path.expanduser(output_dir)
+                out_png = os.path.join(output_dir_exp, subdir)
+                os.makedirs(out_png, exist_ok=True)
+                safe_well = "".join(c if c.isalnum() else "_" for c in well_val)[:80]
+                fname = f"{safe_well}_{sample_name}_dff_events_p{page + 1}.png"
+                fig.savefig(os.path.join(out_png, fname), dpi=150, bbox_inches="tight")
+
+            figures.append(fig)
+            if show_plots:
+                plt.show()
+            else:
+                plt.close(fig)
+
+    return figures
+
+
+def plot_sample_mean_dff_with_events(
+    orb: Any,
+    sample_name: str,
+    exclude_outlier_neurons: bool = True,
+    outlier_flag_col: str = "any_outlier",
+    p_th: float = 75.0,
+    size_threshold: int = 20000,
+    zscore_threshold: float = 3.0,
+    percentage_threshold: float = 0.2,
+    x_axis: str = "frames",
+    figsize: Tuple[float, float] = (11.0, 4.0),
+    event_bar_color: str = "0.45",
+    trace_color: str = "#2a9d8f",
+    title: Optional[str] = None,
+    show_plots: bool = True,
+    save_files: bool = False,
+    output_dir: str = "wizard_staff_outputs",
+    subdir: str = "dff_traces_with_events",
+    filename: Optional[str] = None,
+) -> Optional[plt.Figure]:
+    """
+    Plot the **mean** ΔF/F₀ trace across spatially filtered, QC-accepted neurons
+    for one sample, with event intervals detected on that mean trace (same
+    ``convert_f_to_cs`` + FWHM logic as the main pipeline, using
+    ``zscore_threshold`` / ``percentage_threshold``).
+
+    This matches the style of a single population-mean trace with event bars above it;
+    intervals are defined on the averaged trace, not merged from per-neuron FWHM rows.
+
+    Parameters
+    ----------
+    orb : Orb
+        Must have ``run_all()`` completed (uses shard inputs).
+    sample_name : str
+        Sample to plot.
+    zscore_threshold, percentage_threshold
+        Spike / FWHM settings (defaults match ``run_all``).
+    Other parameters
+        Same conventions as :func:`plot_neuron_dff_traces_with_events`.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        Figure when ``show_plots`` is False; otherwise None after display.
+    """
+    from scipy.stats import zscore as sp_zscore
+
+    from wizards_staff.wizards.spellbook import calc_fwhm_spikes, convert_f_to_cs
+
+    shard_by_name = {sh.sample_name: sh for sh in orb.shards}
+    shard = shard_by_name.get(sample_name)
+    if shard is None:
+        raise ValueError(f"No shard for sample {sample_name!r}.")
+
+    dff = shard.get_input("dff_dat", req=True)
+    filtered_idx = shard.spatial_filtering(
+        p_th=p_th,
+        size_threshold=size_threshold,
+        plot=False,
+        silence=True,
+    )
+
+    outlier_df = orb.outlier_data
+    oo = outlier_df[outlier_df["Sample"] == sample_name] if outlier_df is not None else None
+    outlier_components: set = set()
+    if (
+        exclude_outlier_neurons
+        and oo is not None
+        and not oo.empty
+        and outlier_flag_col in oo.columns
+    ):
+        outlier_components = set(
+            int(x)
+            for x in oo.loc[oo[outlier_flag_col] == True, "Neuron Index"].values  # noqa: E712
+        )
+
+    rows = [int(filtered_idx[i]) for i in range(len(filtered_idx)) if int(filtered_idx[i]) not in outlier_components]
+    if not rows:
+        raise ValueError("No neurons left after filtering; check outlier flags and spatial filter.")
+
+    mean_trace = np.mean(dff[rows, :], axis=0).reshape(1, -1)
+    calcium, spikes = convert_f_to_cs(mean_trace + 0.0001, p=2)
+    zsp = sp_zscore(np.copy(spikes), axis=1)
+    fwhm_back, fwhm_fwd, _, _ = calc_fwhm_spikes(
+        calcium,
+        zsp,
+        zscore_threshold=zscore_threshold,
+        percentage_threshold=percentage_threshold,
+    )
+
+    backs = fwhm_back.get(0, [])
+    fwds = fwhm_fwd.get(0, [])
+
+    md = orb.metadata
+    meta_row = md.loc[md["Sample"] == sample_name]
+    frate = None
+    if x_axis == "seconds":
+        if meta_row.empty or "Frate" not in meta_row.columns:
+            raise ValueError("x_axis='seconds' requires metadata with Frate for this sample.")
+        frate = float(meta_row["Frate"].iloc[0])
+
+    m = mean_trace.ravel()
+    tvec = (
+        np.arange(m.shape[0], dtype=float)
+        if frate is None
+        else np.arange(m.shape[0], dtype=float) / frate
+    )
+
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    ax.plot(tvec, m, color=trace_color, linewidth=1.1, label=f"Mean ({len(rows)} neurons)")
+
+    ymax = float(np.nanmax(m)) if m.size else 1.0
+    ymin = float(np.nanmin(m)) if m.size else 0.0
+    yspan = max(ymax - ymin, 1e-9)
+    bar_y0 = ymax + 0.02 * yspan
+    bar_h = 0.035 * yspan
+
+    for b, f in zip(backs, fwds):
+        x0 = float(b) if frate is None else b / frate
+        x1 = float(f + 1) if frate is None else (f + 1) / frate
+        rect = patches.Rectangle(
+            (x0, bar_y0),
+            x1 - x0,
+            bar_h,
+            linewidth=1.0,
+            edgecolor=event_bar_color,
+            facecolor="none",
+            zorder=5,
+        )
+        ax.add_patch(rect)
+
+    ax.set_ylim(ymin - 0.03 * yspan, bar_y0 + bar_h + 0.08 * yspan)
+    xlab = "Time point (frame)" if frate is None else "Time (s)"
+    ax.set_xlabel(xlab)
+    ax.set_ylabel("ΔF/F₀")
+    ax.grid(True, alpha=0.35)
+
+    n_out = len(outlier_components)
+    if title is not None:
+        ttl = title
+    elif exclude_outlier_neurons and n_out:
+        ttl = f"{sample_name}\nPopulation mean ({len(rows)} neurons — {n_out} outliers excluded)"
+    elif exclude_outlier_neurons and not n_out:
+        ttl = f"{sample_name}\nPopulation mean (all {len(rows)} neurons — no outliers to remove)"
+    else:
+        ttl = f"{sample_name}\nPopulation mean ({len(rows)} neurons)"
+    ax.set_title(ttl, fontsize=11)
+    ax.legend(loc="lower left", fontsize=9)
+
+    if save_files:
+        output_dir_exp = os.path.expanduser(output_dir)
+        out_png = os.path.join(output_dir_exp, subdir)
+        os.makedirs(out_png, exist_ok=True)
+        fn = filename or f"{sample_name}_population_mean_dff_events.png"
+        fig.savefig(os.path.join(out_png, fn), dpi=150, bbox_inches="tight")
+
+    if show_plots:
+        plt.show()
+        plt.close(fig)
+        return None
+    return fig

@@ -96,6 +96,118 @@ A metadata CSV file with the following required columns:
 
 ## Examples
 
+### Calcium Indicator (GCaMP6f, GCaMP6s, jGCaMP8m, jRGECO1a, …)
+
+The waveform outlier detector (`detect_waveform_outliers`) correlates
+each transient against a synthetic template whose kinetics depend on
+the calcium indicator used in the experiment. The legacy default
+matches GCaMP6f (50 ms rise, 400 ms decay, 0.10 ΔF/F peak threshold).
+**If you used a different indicator, set the `indicator` parameter** —
+otherwise real events get silently flagged as shape outliers because
+they don't match the template, and the absolute peak threshold may be
+inappropriate for indicators with smaller ΔF/F excursions (e.g. the
+red indicators).
+
+```python
+orb.run_all(
+    group_name="Well",
+    indicator="GCaMP6s",   # also: GCaMP6m, GCaMP7f, jGCaMP8f / 8m / 8s,
+                           # jRGECO1a, jRCaMP1a, GCaMP3
+)
+```
+
+Or override individual kinetics on top of a preset:
+
+```python
+orb.run_all(
+    group_name="Well",
+    indicator="GCaMP6s",       # preset rise / peak height
+    template_decay_ms=2000.0,  # but with a longer decay than the preset
+)
+```
+
+The presets in `wizards_staff.stats.outliers.INDICATOR_PRESETS` are
+*starting points* drawn from published kinetics under typical
+acquisition conditions. Verify against your own measurements when
+accuracy matters; if your data argues for a different rise/decay,
+override `template_rise_ms` / `template_decay_ms` / `peak_height`
+directly. From the CLI use `--indicator GCaMP6s` (and optionally
+`--template-rise-ms`, `--template-decay-ms`, `--template-total-ms`,
+`--peak-height`).
+
+### Recommended Workflow: Run, Label, Refilter
+
+The standard analysis cycle is three steps: run the automatic pipeline,
+hand-review the detected events, then refilter so the labels feed back
+into every per-event metric.
+
+```python
+from pathlib import Path
+from wizards_staff import Orb
+from wizards_staff.labeling import EventLabeler
+
+orb = Orb(results_folder="...", metadata_file_path="...")
+
+# 1. Initial run with automatic QC.
+orb.run_all(group_name="Well", indicator="GCaMP6s", filter_events=True)
+
+# 2. Open the labeling widget on a shard. The corpus saves automatically.
+shard = next(orb.shatter())
+corpus = Path("event_labels_corpus.csv")
+labeler = EventLabeler(
+    shard,
+    corpus_path=str(corpus),
+    labeler_id="your_initials",
+    context={"indicator": "GCaMP6s", "experiment_id": "expt-001"},
+)
+labeler.display()    # review events: t / f / u keys, or click buttons
+
+# 3. Fold the labels into the analysis (cheap — no re-running of run_all).
+orb.refilter_events(
+    labels_corpus=str(corpus),
+    on_disagreement="drop",   # also: "keep", "majority"
+    filter_events=True,       # keep amplitude/FWHM bounds active too
+)
+```
+
+#### Three-layer event filter
+
+Every per-event metric in Wizards-Staff (`peak_amplitude_data`,
+`fwhm_data`, `frpm_data`, `rise_time_data`, `fall_time_data`,
+`peak_to_peak_data`) describes the same surviving event set. That set
+is the intersection of three filter layers, applied in order:
+
+| Layer | Source | Always on? |
+|-------|--------|------------|
+| 1. NaN/Inf scrub           | deconvolution artefacts                         | yes |
+| 2. Amplitude / FWHM bounds | `min_event_*` / `max_event_*` parameters        | when `filter_events=True` |
+| 3. Human labels            | `labels_corpus` CSV from `EventLabeler`         | when `labels_corpus=...` is passed |
+
+```
+raw events → NaN/Inf scrub → amplitude/FWHM bounds → human labels
+                                                     ↓
+                                            surviving events used
+                                            in every per-event metric
+```
+
+Labels can ONLY drop events. A label of `"True"` cannot recover an
+event that layers 1 or 2 already rejected — labels are a strictly
+additional rejection layer, not an automatic-rejection override. This
+makes the labeling step monotonically conservative: it can only narrow
+the surviving set, never widen it.
+
+`"Unsure"` labels are stored in the corpus (useful for downstream
+calibration) but are treated as not-labeled and never cause a drop.
+When multiple labelers disagree on the same event, `on_disagreement`
+chooses the resolution policy:
+
+- `"drop"` (default) — precautionary, drop on any conflict.
+- `"keep"` — retain when at least one labeler said True.
+- `"majority"` — majority of {True, False} votes; ties drop.
+
+The corpus CSV accumulates across sessions and labelers, so a missing
+file path is logged as a warning and ignored rather than crashing.
+
 ### Pairwise Correlation Analysis
 
 ```python

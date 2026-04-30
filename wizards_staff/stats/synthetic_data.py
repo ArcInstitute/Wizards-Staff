@@ -1,8 +1,14 @@
 """
-Test utilities for validating statistical functions.
+Synthetic-data generators for validating statistical functions.
 
 These functions generate synthetic data with KNOWN statistical properties,
 allowing us to verify that our statistical functions return correct results.
+
+(Historical note: this module was previously named ``test_utils`` but was
+renamed to ``synthetic_data`` so pytest's default ``test_*.py`` discovery
+glob would not try to collect it as a test module, which used to import
+the full ``wizards_staff`` package — including caiman and tensorflow —
+during pytest startup.)
 
 Functions
 ---------

@@ -7,44 +7,80 @@ import numpy as np
 import scipy.linalg
 from skimage.io import imread 
 from skimage.measure import label, regionprops
-from caiman.source_extraction.cnmf import deconvolution
 import warnings
 
 # Suppress RuntimeWarnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# Disable logging for deconvolution
-logging.getLogger('caiman.source_extraction.cnmf.deconvolution').setLevel(logging.CRITICAL)
+# ---------------------------------------------------------------------------
+# Lazy caiman.deconvolution access
+#
+# Importing ``caiman`` transitively pulls in TensorFlow, which is slow
+# (tens of seconds) and leaves non-daemon threads alive at process exit.
+# Anything that *imports* spellbook -- the test suite, the CLI's
+# ``--help``, notebooks that just use the metric calculators on
+# pre-computed traces -- pays that cost even though only
+# :func:`convert_f_to_cs` actually calls into deconvolution.
+#
+# Defer the import (and the scipy>=1.14 monkey-patch) until the first
+# caller asks for it. Subsequent calls reuse the cached handle, so the
+# patch is applied exactly once and the import cost is amortised.
+# ---------------------------------------------------------------------------
+_DECONVOLUTION = None  # populated on first call to _get_deconvolution()
 
-# Patch CaImAn's estimate_time_constant for scipy >=1.14 compatibility.
-# Newer scipy refactored toeplitz() to use batched broadcasting, which fails
-# when CaImAn passes 2D column vectors (e.g. shape (7,1) and (2,1)) instead
-# of 1D arrays. We flatten the slices before calling toeplitz.
-_original_estimate_time_constant = deconvolution.estimate_time_constant
 
-def _patched_estimate_time_constant(fluor, p=2, sn=None, lags=5, fudge_factor=1.):
-    if sn is None:
-        sn = deconvolution.GetSn(fluor)
+def _get_deconvolution():
+    """Return ``caiman.source_extraction.cnmf.deconvolution`` (cached, patched).
 
-    lags += p
-    xc = deconvolution.axcov(fluor, lags)
-    xc = xc[:, np.newaxis]
+    The scipy>=1.14 compatibility patch for ``estimate_time_constant`` is
+    applied exactly once on first access. The deconvolution logger is
+    silenced at the same time.
+    """
+    global _DECONVOLUTION
+    if _DECONVOLUTION is not None:
+        return _DECONVOLUTION
 
-    A = scipy.linalg.toeplitz(
-        xc[lags + np.arange(lags)].flatten(),
-        xc[lags + np.arange(p)].flatten()
-    ) - sn**2 * np.eye(lags, p)
-    g = np.linalg.lstsq(A, xc[lags + 1:], rcond=None)[0]
-    gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
-    gr = (gr + gr.conjugate()) / 2.
-    np.random.seed(45)
-    gr[gr > 1] = 0.95 + np.random.normal(0, 0.01, np.sum(gr > 1))
-    gr[gr < 0] = 0.15 + np.random.normal(0, 0.01, np.sum(gr < 0))
-    g = np.poly(fudge_factor * gr)
-    g = -g[1:]
-    return g.flatten()
+    from caiman.source_extraction.cnmf import deconvolution  # noqa: WPS433
 
-deconvolution.estimate_time_constant = _patched_estimate_time_constant
+    logging.getLogger(
+        "caiman.source_extraction.cnmf.deconvolution"
+    ).setLevel(logging.CRITICAL)
+
+    # Patch CaImAn's estimate_time_constant for scipy >=1.14 compatibility.
+    # Newer scipy refactored toeplitz() to use batched broadcasting, which
+    # fails when CaImAn passes 2D column vectors (e.g. shape (7,1) and
+    # (2,1)) instead of 1D arrays. We flatten the slices before calling
+    # toeplitz. Done at first-use so a no-op import of spellbook (e.g.
+    # in tests, in ``--help`` paths, in notebooks that only call the
+    # metric calculators) does not pay the caiman/TensorFlow import cost.
+    def _patched_estimate_time_constant(
+        fluor, p=2, sn=None, lags=5, fudge_factor=1.0
+    ):
+        if sn is None:
+            sn = deconvolution.GetSn(fluor)
+
+        lags += p
+        xc = deconvolution.axcov(fluor, lags)
+        xc = xc[:, np.newaxis]
+
+        A = scipy.linalg.toeplitz(
+            xc[lags + np.arange(lags)].flatten(),
+            xc[lags + np.arange(p)].flatten(),
+        ) - sn ** 2 * np.eye(lags, p)
+        g = np.linalg.lstsq(A, xc[lags + 1:], rcond=None)[0]
+        gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
+        gr = (gr + gr.conjugate()) / 2.0
+        np.random.seed(45)
+        gr[gr > 1] = 0.95 + np.random.normal(0, 0.01, np.sum(gr > 1))
+        gr[gr < 0] = 0.15 + np.random.normal(0, 0.01, np.sum(gr < 0))
+        g = np.poly(fudge_factor * gr)
+        g = -g[1:]
+        return g.flatten()
+
+    deconvolution.estimate_time_constant = _patched_estimate_time_constant
+
+    _DECONVOLUTION = deconvolution
+    return _DECONVOLUTION
 
 # functions
 def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[0.25, 0.5]
@@ -61,6 +97,8 @@ def convert_f_to_cs(fluorescence_data: np.ndarray, p: int=2, noise_range: list=[
         calcium_signal: Calcium signal matrix.
         spike_signal: Spike signal matrix.
     """
+    deconvolution = _get_deconvolution()
+
     # Initialize arrays for calcium and spike signals
     calcium_signal = np.zeros_like(fluorescence_data)
     spike_signal = np.zeros_like(fluorescence_data)
@@ -86,7 +124,27 @@ def calc_rise_tm(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
                  zscore_threshold: float=3) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
     """
     Calculates the rise time of calcium signals based on spike detection.
-    
+
+    Walks each neuron's spike-z-score trace looking for above-threshold
+    crossings, then for each crossing climbs the calcium trace until it
+    starts to decrease. Every per-event metric in this module
+    (``calc_rise_tm``, ``calc_fall_tm``, ``calc_fwhm_spikes``,
+    ``calc_peak_amplitude``, ``calc_peak_to_peak``) shares this same walk
+    so that the i-th entry of each output corresponds to the same event
+    for a given neuron. The walk is anchored on:
+
+    * ``spikes_above_threshold = spike_zscores >= zscore_threshold``
+      (inclusive comparison — must match the other walkers).
+    * After finding the post-peak frame ``j`` (first frame where the
+      calcium trace stops increasing), the next event search resumes at
+      ``index = j + 1``.
+
+    Downstream code in ``cauldron._apply_event_filters`` relies on the
+    i-th-event correspondence to apply a single positional keep-mask to
+    every per-event metric. Diverging from these two invariants (using
+    a different threshold operator or skipping further past the peak)
+    will silently break that mask.
+
     Args:
         calcium_signals: Calcium signal matrix with neurons as rows and time points as columns.
         spike_zscores: Z-scored spike signal matrix.
@@ -160,8 +218,11 @@ def calc_fwhm_spikes(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
     
     # Iterate over each neuron
     for neuron_idx in range(calcium_signals.shape[0]):
-        # Identify spike events based on z-score threshold
-        spikes_above_threshold = spike_zscores[neuron_idx] > zscore_threshold
+        # Identify spike events based on z-score threshold. Use ``>=`` to
+        # match the canonical walk in ``calc_rise_tm`` so the i-th event
+        # produced here aligns with the i-th rise/peak/fall/peak-to-peak
+        # event for this neuron (see ``calc_rise_tm`` docstring).
+        spikes_above_threshold = spike_zscores[neuron_idx] >= zscore_threshold
         calcium_trace = calcium_signals[neuron_idx]
         
         neuron_fwhm_backward_positions = []
@@ -181,18 +242,22 @@ def calc_fwhm_spikes(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
                     prev_calcium = calcium_trace[j]
                     j += 1
                 
-                j -= 1
+                # j is the first non-increasing frame; the peak sits at j-1.
+                # We deliberately do NOT decrement j itself — it's reused
+                # below to advance ``index`` in lockstep with calc_rise_tm
+                # / calc_peak_amplitude.
+                peak_pos = j - 1
                 half_max_value = percentage_threshold * (prev_calcium - calcium_trace[index]) + calcium_trace[index]
                 
                 # Find the backward index where the calcium value falls below half maximum
-                backward_index = j - 1
+                backward_index = peak_pos - 1
                 while backward_index >= 0 and calcium_trace[backward_index] >= half_max_value:
                     backward_index -= 1
                 backward_index += 1
                 neuron_fwhm_backward_positions.append(backward_index)
                 
                 # Find the forward index where the calcium value falls below half maximum
-                forward_index = j + 1
+                forward_index = peak_pos + 1
                 while forward_index < len(calcium_trace) - 10 and calcium_trace[forward_index] >= half_max_value:
                     forward_index += 1
                 forward_index -= 1
@@ -205,7 +270,13 @@ def calc_fwhm_spikes(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
                 # Count the number of spikes within the FWHM
                 neuron_spike_counts.append(1 + np.sum(spikes_above_threshold[backward_index:(forward_index + 1)]))
                 
-                index = forward_index + 1
+                # Advance to ``j + 1`` (one past the peak), matching the
+                # canonical walk. Earlier versions advanced past
+                # ``forward_index``, which silently dropped any events
+                # whose rise fell inside the previous event's FWHM
+                # window, breaking the i-th-event correspondence with
+                # rise/fall/peak/peak-to-peak.
+                index = j + 1
             else:
                 index += 1
         
@@ -313,7 +384,14 @@ def calc_fall_tm(calcium_signals: np.ndarray, spike_zscores: np.ndarray,
                 # Record the fall time and peak position
                 neuron_fall_times.append(fall_time)
                 neuron_fall_positions.append(peak_pos)
-                index = k + 1
+                # Advance to ``j + 1`` (one past the peak) — the canonical
+                # walk shared with calc_rise_tm / calc_peak_amplitude /
+                # calc_peak_to_peak. Earlier versions advanced to ``k + 1``
+                # (past the fall), which silently dropped any events whose
+                # rise sat inside the previous event's fall window and
+                # broke the i-th-event correspondence relied on by
+                # ``cauldron._apply_event_filters``.
+                index = j + 1
             else:
                 index += 1
         

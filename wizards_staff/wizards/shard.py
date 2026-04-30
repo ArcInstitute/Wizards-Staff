@@ -44,9 +44,39 @@ class Shard:
     _fwhm_data: list = field(default_factory=list, init=False)
     _frpm_data: list = field(default_factory=list, init=False)
     _peak_amplitude_data: list = field(default_factory=list, init=False)
+    _max_peak_amplitude_data: list = field(default_factory=list, init=False)
     _peak_to_peak_data: list = field(default_factory=list, init=False)
     _mask_metrics_data: list = field(default_factory=list, init=False)
     _silhouette_scores_data: list = field(default_factory=list, init=False)
+    _outlier_data: list = field(default_factory=list, init=False)
+    # Raw (pre-event-filter) per-neuron event lists. Populated unconditionally
+    # by _run_all so that orb.refilter_events(...) can re-derive the filtered
+    # views (_fwhm_data / _peak_amplitude_data / _max_peak_amplitude_data /
+    # _rise_time_data / _fall_time_data / _peak_to_peak_data / _frpm_data)
+    # without re-running spatial filtering, outlier detection, or the
+    # per-event metric calculations. Schemas mirror their filtered
+    # counterparts. ``_apply_event_filters`` is a pure function of these
+    # raw lists plus the bound parameters: it never mutates them.
+    _raw_fwhm_data: list = field(default_factory=list, init=False)
+    _raw_peak_amplitude_data: list = field(default_factory=list, init=False)
+    _raw_rise_time_data: list = field(default_factory=list, init=False)
+    _raw_fall_time_data: list = field(default_factory=list, init=False)
+    _raw_peak_to_peak_data: list = field(default_factory=list, init=False)
+    _raw_frpm_data: list = field(default_factory=list, init=False)
+    # Per-event drop ledger. One dict per event rejected by
+    # ``_apply_event_filters`` (NaN/Inf scrub, amplitude bounds, FWHM
+    # bounds, or human labels). Schema:
+    #   sample_id, neuron_idx, event_idx, peak_amplitude (may be
+    #   NaN/Inf), fwhm_frames (may be NaN/Inf), drop_reason. The ledger
+    #   is replaced wholesale on every ``_apply_event_filters`` call so
+    #   it always reflects the current filter configuration, never a
+    #   running history.
+    _event_drop_log: list = field(default_factory=list, init=False)
+    # Recording-level scalars cached so ``_apply_event_filters`` can
+    # recompute filtered firing rates from the keep-mask without needing
+    # access to the full z-score matrix again.
+    _recording_n_frames: int = field(default=0, init=False)
+    _recording_frate: int = field(default=0, init=False)
     
     def __post_init__(self):
         self._logger = init_custom_logger(__name__)
@@ -216,6 +246,15 @@ class Shard:
     @property
     def silhouette_scores_data(self):  
         return self._silhouette_scores_data
+
+    @property
+    def outlier_data(self):
+        return self._outlier_data
+
+    @property
+    def event_drop_log(self):
+        """Per-event drop ledger for this shard (list of dicts)."""
+        return self._event_drop_log
 
     #-- dunders --#
     def __str__(self) -> str:

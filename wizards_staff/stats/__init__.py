@@ -82,6 +82,11 @@ from .timeseries import (
 
 # Outlier detection
 from .outliers import (
+    detect_low_pnr_neurons,
+    detect_neuron_outliers,
+    detect_waveform_outliers,
+    detect_spectral_outliers,
+    combine_neuron_qc,
     detect_outliers,
     visualize_outliers,
     handle_outliers,
@@ -112,8 +117,11 @@ from .visualizations import (
     plot_multiple_metrics_summary,
 )
 
-# Test utilities (for generating synthetic data)
-from .test_utils import (
+# Synthetic-data utilities (renamed from `test_utils` to avoid pytest
+# discovering this production module as a test file -- which used to
+# drag the entire wizards_staff package import chain, including caiman
+# and tensorflow, into pytest's collection phase).
+from .synthetic_data import (
     generate_two_group_data,
     generate_multi_group_data,
     generate_correlated_data,
@@ -155,6 +163,11 @@ __all__ = [
     "detect_bursting",
     "calculate_synchrony_metrics",
     # Outliers
+    "detect_low_pnr_neurons",
+    "detect_neuron_outliers",  # deprecated alias of detect_low_pnr_neurons
+    "detect_waveform_outliers",
+    "detect_spectral_outliers",
+    "combine_neuron_qc",
     "detect_outliers",
     "visualize_outliers",
     "handle_outliers",

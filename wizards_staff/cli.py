@@ -45,6 +45,76 @@ def parse_args():
                         help='Number of parallel processes')
     parser.add_argument('--allow-missing', action='store_true', default=False,
                         help='Allow missing input files')
+    parser.add_argument('--remove-outlier', action='store_true', default=False,
+                        help=('Exclude detected outlier neurons from downstream '
+                              'metric DataFrames and per-shard plots, and emit '
+                              'population-mean / per-neuron event plots.'))
+    parser.add_argument('--show-outlier', action='store_true', default=False,
+                        help=('When combined with --remove-outlier, also emit '
+                              '"with outliers" copies of every affected plot and '
+                              'CSV under <output-dir>/with_outliers/. No effect '
+                              'without --remove-outlier.'))
+    parser.add_argument('--filter-events', action='store_true', default=False,
+                        help=('Master switch for per-event filtering. When set, '
+                              'the --min-event-* / --max-event-* bounds below '
+                              'are applied to drop noise / artifact events. '
+                              'When unset (default), all detected events are '
+                              'kept regardless of the bounds.'))
+    parser.add_argument('--min-event-amplitude', type=float, default=0.05,
+                        help=('Per-event filter (requires --filter-events): '
+                              'drop events whose peak dF/F is below this value. '
+                              'Default 0.05 rejects sub-noise and negative '
+                              '"peaks". Set to a negative number to effectively '
+                              'disable the lower bound.'))
+    parser.add_argument('--max-event-amplitude', type=float, default=10.0,
+                        help=('Per-event filter (requires --filter-events): '
+                              'drop events whose peak dF/F exceeds this value. '
+                              'Default 10.0 rejects deconvolution numerical '
+                              'artifacts.'))
+    parser.add_argument('--min-event-fwhm', type=int, default=2,
+                        help=('Per-event filter (requires --filter-events): '
+                              'drop events whose FWHM (in frames) is below '
+                              'this value. Default 2 rejects 1-frame "spikes".'))
+    parser.add_argument('--max-event-fwhm', type=int, default=None,
+                        help=('Per-event filter (requires --filter-events): '
+                              'drop events whose FWHM (in frames) exceeds this '
+                              'value. Default None (no upper bound).'))
+    parser.add_argument('--indicator', type=str, default=None,
+                        help=('Calcium indicator preset for the waveform '
+                              'outlier detector. Loads published-kinetics '
+                              'rise/decay/peak-height defaults from '
+                              'INDICATOR_PRESETS. Examples: GCaMP6f, '
+                              'GCaMP6s, GCaMP6m, GCaMP7f, jGCaMP8f, '
+                              'jGCaMP8m, jGCaMP8s, jRGECO1a, jRCaMP1a, '
+                              'GCaMP3. Required when working with anything '
+                              'other than GCaMP6f-like green indicators; '
+                              'mismatched templates silently flag real '
+                              'events as shape outliers. Default None '
+                              '(legacy GCaMP6f-like template).'))
+    parser.add_argument('--template-rise-ms', type=float, default=None,
+                        help=('Override the waveform template rise time '
+                              '(ms). Wins over --indicator preset. Default '
+                              'None (use preset / GCaMP6f-like 50 ms).'))
+    parser.add_argument('--template-decay-ms', type=float, default=None,
+                        help=('Override the waveform template decay '
+                              'time-constant (ms). Wins over --indicator '
+                              'preset. Default None (use preset / '
+                              'GCaMP6f-like 400 ms).'))
+    parser.add_argument('--template-total-ms', type=float, default=None,
+                        help=('Override the waveform template total '
+                              'length (ms). Default None (1500 ms).'))
+    parser.add_argument('--peak-height', type=float, default=None,
+                        help=('Override the absolute dF/F peak threshold '
+                              'used by the waveform detector. Wins over '
+                              '--indicator preset. Default None (use '
+                              'preset / GCaMP6f-like 0.10). Red '
+                              'indicators usually need ~0.05.'))
+    parser.add_argument('--no-report', dest='generate_report',
+                        action='store_false', default=True,
+                        help=('Silence the end-of-run summary report. By '
+                              'default a markdown report is printed (and '
+                              'written to <output-dir>/run_report.md when '
+                              'output files are saved).'))
     parser.add_argument('--debug', action='store_true', default=False,
                         help='Debug mode')
     return parser.parse_args()
@@ -83,7 +153,20 @@ def main():
         p_th=75,
         min_clusters=2,
         max_clusters=10,
-        zscore_threshold=3
+        zscore_threshold=3,
+        remove_outlier=args.remove_outlier,
+        show_outlier=args.show_outlier,
+        filter_events=args.filter_events,
+        min_event_amplitude=args.min_event_amplitude,
+        max_event_amplitude=args.max_event_amplitude,
+        min_event_fwhm=args.min_event_fwhm,
+        max_event_fwhm=args.max_event_fwhm,
+        indicator=args.indicator,
+        template_rise_ms=args.template_rise_ms,
+        template_decay_ms=args.template_decay_ms,
+        template_total_ms=args.template_total_ms,
+        peak_height=args.peak_height,
+        generate_report=args.generate_report,
     )
 
     # Status
