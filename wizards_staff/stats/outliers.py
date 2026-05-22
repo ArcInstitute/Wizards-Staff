@@ -53,9 +53,12 @@ PNR_LOG_EPSILON: float = 1e-3
 # References (rise time = 10–90 % rise, decay = single-exponential τ off):
 #   - GCaMP6f / GCaMP6m / GCaMP6s: Chen et al., Nature 2013
 #     ("Ultrasensitive fluorescent proteins for imaging neuronal activity").
-#   - GCaMP7f: Dana et al., Nat. Methods 2019
+#   - GCaMP7f / GCaMP7s: Dana et al., Nat. Methods 2019
 #     ("High-performance calcium sensors for imaging activity in neuronal
-#     populations and microcompartments").
+#     populations and microcompartments"). Preset names drop the leading
+#     "j" of the published "jGCaMP7" series for consistency with the
+#     existing ``GCaMP7f`` entry; the kinetics correspond to the
+#     Janelia jGCaMP7 indicators.
 #   - jGCaMP8f / jGCaMP8m / jGCaMP8s: Zhang et al., Nature 2023
 #     ("Fast and sensitive GCaMP calcium indicators for imaging neural
 #     populations").
@@ -75,6 +78,7 @@ INDICATOR_PRESETS: Dict[str, Dict[str, float]] = {
     "GCaMP6s":  {"rise_ms": 80.0,  "decay_ms": 1200.0, "peak_height": 0.10},
     "GCaMP6m":  {"rise_ms": 60.0,  "decay_ms": 700.0,  "peak_height": 0.10},
     "GCaMP7f":  {"rise_ms": 30.0,  "decay_ms": 250.0,  "peak_height": 0.10},
+    "GCaMP7s":  {"rise_ms": 70.0,  "decay_ms": 1700.0, "peak_height": 0.10},
     "jGCaMP8m": {"rise_ms": 7.0,   "decay_ms": 90.0,   "peak_height": 0.10},
     "jGCaMP8s": {"rise_ms": 15.0,  "decay_ms": 250.0,  "peak_height": 0.10},
     "jGCaMP8f": {"rise_ms": 4.0,   "decay_ms": 60.0,   "peak_height": 0.10},

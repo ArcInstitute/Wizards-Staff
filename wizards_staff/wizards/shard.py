@@ -77,9 +77,79 @@ class Shard:
     # access to the full z-score matrix again.
     _recording_n_frames: int = field(default=0, init=False)
     _recording_frate: int = field(default=0, init=False)
+    # Active Layer-2 event-bound configuration, stashed by
+    # ``_apply_event_filters`` on every invocation (so both ``_run_all``
+    # and ``Orb.refilter_events`` keep this in sync with whatever the
+    # filtered ``_*_data`` lists currently reflect). ``EventLabeler``
+    # consults these to skip raw events that the Layer-2 bounds would
+    # drop anyway — labels can only narrow the surviving set further,
+    # so reviewing already-rejected events is pure wasted effort.
+    # ``_active_filter_events=False`` means the bounds are inactive (no
+    # skipping); the bound values are still recorded for diagnostics.
+    _active_filter_events: bool = field(default=False, init=False)
+    _active_min_event_amplitude: Optional[float] = field(default=None, init=False)
+    _active_max_event_amplitude: Optional[float] = field(default=None, init=False)
+    _active_min_event_fwhm: Optional[float] = field(default=None, init=False)
+    _active_max_event_fwhm: Optional[float] = field(default=None, init=False)
+    # Spatial-filtering result cached by ``_run_all`` so downstream tools
+    # (notably ``EventLabeler``) don't have to re-derive it with a guessed
+    # set of p_th / size_threshold parameters that might disagree with
+    # what _run_all actually used. ``_filtered_idx_params`` stores the
+    # exact (p_th, size_threshold) the cache was computed against; tools
+    # that want to use the cache should verify the parameters match
+    # their assumptions or recompute. Empty list (not None) on a shard
+    # that has never been processed.
+    _filtered_idx_cache: list = field(default_factory=list, init=False)
+    _filtered_idx_params: Optional[Dict[str, Any]] = field(default=None, init=False)
     
     def __post_init__(self):
         self._logger = init_custom_logger(__name__)
+
+    def _reset_run_state(self) -> None:
+        """Clear every per-shard accumulator populated by ``_run_all``.
+
+        ``_run_all`` only ever appends to ``_raw_*`` / ``_*_data`` /
+        ``_outlier_data`` / ``_event_drop_log`` / ``_silhouette_scores_data``
+        / ``_mask_metrics_data``. Re-invoking ``Orb.run_all`` on the same
+        orb (e.g. when iterating on ``zscore_threshold`` in a notebook)
+        would otherwise stack stale rows on top of fresh ones. The
+        per-(sample, neuron) ``fwhm_lookup`` built in
+        :func:`wizards_staff.wizards.cauldron._apply_event_filters` keeps
+        only the LAST row per key, but the surrounding loop iterates
+        EVERY appended amplitude row — so a stale 5-event amplitude row
+        sitting in front of a fresh 2-event FWHM row trips the
+        length-equality invariant and raises ``RuntimeError``. Resetting
+        here is the load-bearing fix; callers should invoke it before
+        any append happens.
+        """
+        # Filtered per-event metric lists.
+        self._rise_time_data = []
+        self._fall_time_data = []
+        self._fwhm_data = []
+        self._frpm_data = []
+        self._peak_amplitude_data = []
+        self._max_peak_amplitude_data = []
+        self._peak_to_peak_data = []
+        # Per-shard non-event accumulators.
+        self._mask_metrics_data = []
+        self._silhouette_scores_data = []
+        self._outlier_data = []
+        # Raw (pre-filter) per-event metric lists.
+        self._raw_fwhm_data = []
+        self._raw_peak_amplitude_data = []
+        self._raw_rise_time_data = []
+        self._raw_fall_time_data = []
+        self._raw_peak_to_peak_data = []
+        self._raw_frpm_data = []
+        # Per-event drop ledger.
+        self._event_drop_log = []
+        # Active Layer-2 bounds (reset until ``_apply_event_filters``
+        # re-stashes them on the next run).
+        self._active_filter_events = False
+        self._active_min_event_amplitude = None
+        self._active_max_event_amplitude = None
+        self._active_min_event_fwhm = None
+        self._active_max_event_fwhm = None
 
     def get_input(self, item_name: str, req: bool=False) -> Any:
         """

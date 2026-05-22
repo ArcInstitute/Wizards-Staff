@@ -6,6 +6,127 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## Unreleased
 
+### Added
+
+- **Auto-skip past already-reviewed traces in `EventLabeler`.** Previously
+  the labeler would (a) open at ROI 0 regardless of which ROIs had
+  already been reviewed in earlier sessions, and (b) advance to the
+  literal next ROI after `skip_trace`, `reject_whole_trace`, or the
+  drill-mode auto-return at the last event of a trace — even when that
+  next ROI was already labeled / skipped / rejected. Biologists were
+  routinely landing on confusing "(previously rejected)" overviews and
+  having to manually press `n` past completed work. The labeler now:
+  - **Resumes on the first ROI with unfinished events** when constructed
+    (the multi-shard wrapper's `_restore_child_state` still wins for
+    explicit cursor restoration, so navigation always trumps the resume
+    heuristic).
+  - **Auto-advances to the next *unreviewed* ROI** after `skip_trace`,
+    `reject_whole_trace`, and drill-mode last-event labeling, falling
+    back to the literal next ROI only when every later trace is already
+    done (so the cursor visibly moves forward and the multi-shard
+    wrapper can detect `is_complete` to advance to the next image).
+  - **Adds `next_unreviewed_trace()` plus a "Next unreviewed (m)"
+    button and `m` keyboard shortcut** for biologists who want to
+    actively jump past reviewed traces without going through a
+    labeling action first.
+  - **Keeps `next_trace` / `prev_trace` (`n` / `p`) as pure navigation
+    that walks every ROI in order**, so reviewed traces remain reachable
+    for verification.
+- **In-plot legends on the labeler's overview and per-event figures.**
+  Biologists could not distinguish the orange dot (event peak) from
+  the wide orange axvspan (FWHM extent) on the trace overview, and
+  were further confused when the shading appeared on some events but
+  not others (it was suppressed on already-labeled events and on
+  events whose FWHM bounds the analysis couldn't compute). The fix is
+  a compact two-column matplotlib legend, painted via
+  ``EventLabeler._add_overview_legend`` /
+  ``_add_drill_legend``, that names every glyph the figure emits.
+  The help banner above the labeler also gains a "Plot legend"
+  paragraph describing the encoding and explicitly noting that
+  long sustained transients can produce FWHM bands that span most
+  of the trace — that is correct behavior, not a rendering bug.
+- **Single-step undo for `EventLabeler.reject_whole_trace`.** Whole-trace
+  rejection is the labeler's most destructive bulk action — a single
+  keystroke can label 10+ events False — and previously had no recovery
+  path. The new `EventLabeler.undo_trace_rejection()` reverses the most
+  recent reject_whole_trace commit, restoring every event's prior label
+  entry, the prior trace-action sentinel for the ROI, and the cursor /
+  view that were active at commit time. Persistence is automatic: the
+  undo runs `_save()` so the corpus on disk reflects the restored state
+  in the same atomic rewrite. The undo window opens at every successful
+  rejection commit and is closed by the next state-mutating action
+  (label, skip, or another reject). Pure navigation (next/prev trace,
+  investigate, back) does NOT close it, so a labeler can scroll forward
+  one trace and still take the rejection back. Only one level of undo
+  is supported; the snapshot is in-memory and does not survive a kernel
+  restart or labeler-instance recreation. The notebook UI gains an
+  "Undo last reject (z)" button on the overview controls (auto-disabled
+  when there's nothing to undo) and `z` is bound in both keymaps.
+- **Quiet-mode probe constructions in `MultiShardLabeler`.** The
+  multi-image wrapper used to fan out one INFO log per shard at startup
+  ("ROI N has zero events", "skipped X events outside Layer-2 bounds")
+  while probing for the resume position and computing the dataset
+  progress chip — N log lines per startup on multi-shard datasets, with
+  another N per progress refresh. `EventLabeler` now accepts
+  `quiet=True` to downgrade those construction-time INFO logs to DEBUG
+  (data-integrity WARNINGs are unaffected); the wrapper passes
+  `quiet=True` for every probe path. The active labeler that the user
+  is actually working with still emits these messages at INFO so the
+  bounds-skipping notice surfaces exactly when actionable. Combined
+  with a per-shard `(total_events, unfinished_count)` cache that
+  invalidates on save, multi-image labeling now stays quiet and
+  responsive on 50+ shard datasets.
+- **`Orb.label_events(...)` and `MultiShardLabeler` for one-cell,
+  multi-image hand labeling.** Previously biologists labeling a
+  multi-image dataset had to pass a single shard to `EventLabeler`
+  and re-launch it for each remaining sample (the docstring's
+  `for shard in orb.shards` suggestion silently broke under
+  ipywidgets — only the last widget rendered, and overlapping
+  keyboard handlers cross-talked). The new wrapper renders one
+  widget that walks across every shard with prev/next-image
+  buttons, an image dropdown, an "image N of M reviewed" progress
+  chip, an opt-out auto-advance toggle, and a green completion
+  banner that names the exact `orb.refilter_events(...)` call to
+  run next. Resume-on-reopen is automatic: re-running the cell
+  lands the labeler on the first image with unfinished events
+  (computed from the corpus, so a labeler can stop and resume across
+  notebook restarts and across days). Empty shards (no events
+  surviving the Layer-2 amplitude/FWHM bounds) are silently skipped
+  on next/prev navigation rather than rendering a confusing
+  zero-event UI. `EventLabeler` itself gains the supporting
+  `is_complete` / `unfinished_count` properties and an
+  `on_state_change` callback hook used by the wrapper for
+  auto-advance; the single-shard API is unchanged for tests,
+  calibration scripts, and any caller that wants to label exactly
+  one shard. The tutorial notebook's labeling cell now uses
+  `orb.label_events(...)` directly so first-time users never need to
+  pick a shard or write a Python loop.
+- **`GCaMP7s` indicator preset** added to `INDICATOR_PRESETS` in
+  `wizards_staff/stats/outliers.py`
+  (`rise_ms=70`, `decay_ms=1700`, `peak_height=0.10`, sourced from
+  Dana et al., Nat. Methods 2019). Matches the existing `GCaMP7f`
+  naming convention (the published "j" prefix is dropped). Users
+  imaging with the slow Janelia GCaMP7 indicator can now pass
+  `indicator="GCaMP7s"` to `Orb.run_all` / the CLI instead of
+  manually overriding `template_rise_ms` / `template_decay_ms` /
+  `peak_height`.
+
+### Fixed
+
+- **`plot_sample_mean_dff_with_events` no longer auto-displays in
+  Jupyter when `show_plots=False`.** The function created its figure
+  via `plt.subplots` but did not call `plt.close(fig)` on the
+  not-show return path. Under the default `%matplotlib inline`
+  backend pyplot would auto-display the still-registered figure at
+  the end of the cell, defeating `show_plots=False` for callers that
+  exercise the `plot_sample_mean_dff_with_events` path inside
+  `Orb.run_all` / `Orb.refilter_events`. The figure is now closed
+  before being returned, matching the established pattern used by
+  every other plotting helper in `wizards_staff/plotting.py` (e.g.
+  `plot_neuron_dff_traces_with_events` at line 2438). The `Figure`
+  return value is preserved — closed figures can still be saved or
+  inspected — so no caller contract changes.
+
 ### Fixed (correctness fix — pre-publication behavior change)
 
 - **Per-event filtering (Stage 4) now consistently applies to

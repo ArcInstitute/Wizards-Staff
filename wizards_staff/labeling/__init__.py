@@ -13,5 +13,6 @@ Install the optional widget dependency with::
 """
 
 from wizards_staff.labeling.event_labeler import EventLabeler
+from wizards_staff.labeling.multi_shard_labeler import MultiShardLabeler
 
-__all__ = ["EventLabeler"]
+__all__ = ["EventLabeler", "MultiShardLabeler"]

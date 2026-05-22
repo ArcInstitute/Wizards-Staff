@@ -2600,4 +2600,5 @@ def plot_sample_mean_dff_with_events(
         plt.show()
         plt.close(fig)
         return None
+    plt.close(fig)
     return fig

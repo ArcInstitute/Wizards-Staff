@@ -293,6 +293,49 @@ def test_nan_inf_scrub_propagates(cauldron):
     assert shard._frpm_data[0]["N Events"] == 2
 
 
+def test_active_bounds_stashed_on_shard(cauldron):
+    """
+    ``_apply_event_filters`` must record the active Layer-2 bound
+    configuration on the shard so downstream consumers
+    (notably ``EventLabeler``) can mirror it without re-passing
+    parameters through a separate channel. Verified for both the
+    enabled and disabled cases — when ``filter_events=False`` the
+    flag is False but the bound values are still recorded for
+    diagnostics.
+    """
+    shard = _make_shard(per_neuron_events=[
+        [_ev(0.5, 50), _ev(1.0, 200)],
+    ])
+    cauldron._apply_event_filters(
+        shard,
+        filter_events=True,
+        min_event_amplitude=0.1,
+        max_event_amplitude=8.0,
+        min_event_fwhm=2,
+        max_event_fwhm=50,
+    )
+    assert shard._active_filter_events is True
+    assert shard._active_min_event_amplitude == 0.1
+    assert shard._active_max_event_amplitude == 8.0
+    assert shard._active_min_event_fwhm == 2
+    assert shard._active_max_event_fwhm == 50
+
+    # Re-invoke with the master switch off — the bounds are still
+    # recorded for diagnostics, but the active flag reports OFF so
+    # the labeler knows not to enforce them.
+    cauldron._apply_event_filters(
+        shard,
+        filter_events=False,
+        min_event_amplitude=0.1,
+        max_event_amplitude=8.0,
+        min_event_fwhm=2,
+        max_event_fwhm=50,
+    )
+    assert shard._active_filter_events is False
+    assert shard._active_min_event_amplitude == 0.1
+    assert shard._active_max_event_amplitude == 8.0
+
+
 def test_amplitude_bounds_propagate(cauldron):
     """Real but out-of-bounds amplitudes drop from every per-event metric."""
     shard = _make_shard(per_neuron_events=[
@@ -1493,3 +1536,188 @@ def test_fwhm_data_invariant_length_mismatch_raises(cauldron):
     assert "length mismatch" in msg
     assert "3 amplitude events vs 2 FWHM values" in msg
     assert "report this as a bug" in msg
+
+
+# ---------------------------------------------------------------------------
+# Tests: re-run safety (regression for the stale-row mismatch bug)
+# ---------------------------------------------------------------------------
+def test_rerun_appends_without_reset_triggers_fwhm_mismatch(cauldron):
+    """Reproduces the user-reported bug.
+
+    The pre-fix ``_run_all`` did not clear ``shard._raw_*_data`` before
+    appending, so calling ``orb.run_all`` twice in a row (e.g. while
+    tuning ``zscore_threshold`` in a notebook) stacked the previous
+    run's per-neuron rows in front of the new ones. ``fwhm_lookup``
+    inside ``_apply_event_filters`` keeps only the LAST row per
+    ``(sample, neuron)`` key, but the surrounding loop walks EVERY
+    amplitude row — so a stale 5-event amplitude row gets checked
+    against the latest 2-event FWHM row and the length-equality
+    invariant raises ``RuntimeError``. This test pins the bug pattern
+    so we notice if a future refactor reintroduces a code path that
+    appends without resetting.
+    """
+    # First "run": neuron 0 fired 5 events.
+    shard = _make_shard(per_neuron_events=[[
+        _ev(0.5, 30), _ev(0.5, 100), _ev(0.5, 200),
+        _ev(0.5, 300), _ev(0.5, 400),
+    ]])
+    # Second "run" without resetting: same neuron, only 2 events at the
+    # higher zscore_threshold. Append, do not replace — this mirrors the
+    # pre-fix pipeline behavior exactly.
+    shard._raw_peak_amplitude_data.append({
+        "Sample": "S1", "Neuron": 0,
+        "Peak Amplitudes": [0.5, 0.5], "Peak Positions": [30, 100],
+        "is_outlier": False,
+    })
+    shard._raw_fwhm_data.append({
+        "Sample": "S1", "Neuron": 0,
+        "FWHM Backward Positions": [28, 98],
+        "FWHM Forward Positions": [32, 102],
+        "FWHM Values": [5.0, 5.0],
+        "Spike Counts": [1, 1],
+        "is_outlier": False,
+    })
+    with pytest.raises(RuntimeError) as excinfo:
+        cauldron._apply_event_filters(
+            shard,
+            filter_events=True,
+            min_event_amplitude=0.05,
+            max_event_amplitude=10.0,
+            min_event_fwhm=2,
+            max_event_fwhm=None,
+        )
+    msg = str(excinfo.value)
+    assert "length mismatch" in msg
+    assert "5 amplitude events vs 2 FWHM values" in msg
+
+
+def test_shard_reset_run_state_clears_accumulators_for_rerun():
+    """``Shard._reset_run_state`` zeroes every list ``_run_all`` appends to.
+
+    This is the load-bearing fix for the re-run mismatch bug above:
+    ``_run_all`` calls ``shard._reset_run_state()`` before any append,
+    so the second invocation of ``orb.run_all`` starts from clean
+    accumulators and the ``fwhm_lookup`` matches the iterated
+    amplitude rows by length again. We use the real ``Shard`` dataclass
+    here (not the ``SimpleNamespace`` test double) so the test guards
+    against drift between the dataclass field list and the reset
+    method.
+    """
+    # Real Shard, not the SimpleNamespace double — keeps the field list
+    # and the reset method in lockstep.
+    from wizards_staff.wizards.shard import Shard  # noqa: WPS433
+
+    shard = Shard(
+        sample_name="S1",
+        metadata=pd.DataFrame({"Sample": ["S1"]}),
+        files={},
+        allow_missing=True,
+    )
+    # Stuff each accumulator with a sentinel row.
+    sentinel_attrs = [
+        "_rise_time_data", "_fall_time_data", "_fwhm_data", "_frpm_data",
+        "_peak_amplitude_data", "_max_peak_amplitude_data",
+        "_peak_to_peak_data", "_mask_metrics_data",
+        "_silhouette_scores_data", "_outlier_data",
+        "_raw_fwhm_data", "_raw_peak_amplitude_data",
+        "_raw_rise_time_data", "_raw_fall_time_data",
+        "_raw_peak_to_peak_data", "_raw_frpm_data",
+        "_event_drop_log",
+    ]
+    for attr in sentinel_attrs:
+        getattr(shard, attr).append({"sentinel": True})
+        assert getattr(shard, attr), f"setup: {attr} should be non-empty"
+
+    shard._reset_run_state()
+
+    for attr in sentinel_attrs:
+        assert getattr(shard, attr) == [], (
+            f"_reset_run_state should clear {attr}; got {getattr(shard, attr)!r}"
+        )
+
+
+def test_apply_event_filters_after_reset_does_not_raise(cauldron):
+    """After ``_reset_run_state`` + fresh appends, the invariant holds.
+
+    Companion test to ``test_rerun_appends_without_reset_triggers_fwhm_mismatch``:
+    if the second "run" properly resets first, the latest amplitude
+    and FWHM rows are length-matched and ``_apply_event_filters``
+    completes without raising — even though the *first* run had a
+    different event count.
+    """
+    from wizards_staff.wizards.shard import Shard  # noqa: WPS433
+
+    shard = Shard(
+        sample_name="S1",
+        metadata=pd.DataFrame({"Sample": ["S1"]}),
+        files={},
+        allow_missing=True,
+    )
+    shard._recording_n_frames = 600
+    shard._recording_frate = 10
+
+    def _append_run(amps, peaks):
+        shard._raw_peak_amplitude_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "Peak Amplitudes": list(amps),
+            "Peak Positions": list(peaks),
+            "is_outlier": False,
+        })
+        shard._raw_fwhm_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "FWHM Backward Positions": [p - 2 for p in peaks],
+            "FWHM Forward Positions": [p + 2 for p in peaks],
+            "FWHM Values": [5.0] * len(amps),
+            "Spike Counts": [1] * len(amps),
+            "is_outlier": False,
+        })
+        shard._raw_rise_time_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "Rise Times": [4] * len(amps),
+            "Rise Positions": [p + 1 for p in peaks],
+            "is_outlier": False,
+        })
+        shard._raw_fall_time_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "Fall Times": [8] * len(amps),
+            "Fall Positions": list(peaks),
+            "is_outlier": False,
+        })
+        intervals = (
+            list(np.diff(np.asarray(peaks)).astype(float))
+            if len(peaks) >= 2 else []
+        )
+        shard._raw_peak_to_peak_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "Peak Positions": list(peaks),
+            "Inter-Spike Intervals": intervals,
+            "is_outlier": False,
+        })
+        shard._raw_frpm_data.append({
+            "Sample": "S1", "Neuron": 0,
+            "Neuron Index": 0,
+            "Firing Rate Per Min": len(amps) * 60.0 * 10 / 600,
+            "N Events": len(amps),
+            "N Frames": 600,
+            "Frate": 10,
+            "is_outlier": False,
+        })
+
+    # First "run" produced 5 events at the lower zscore_threshold...
+    _append_run([0.5] * 5, [30, 100, 200, 300, 400])
+    # ...then user re-runs at a higher zscore_threshold. _reset_run_state
+    # is the fix that prevents stale rows from poisoning the next pass.
+    shard._reset_run_state()
+    _append_run([0.5, 0.5], [30, 100])
+
+    cauldron._apply_event_filters(
+        shard,
+        filter_events=True,
+        min_event_amplitude=0.05,
+        max_event_amplitude=10.0,
+        min_event_fwhm=2,
+        max_event_fwhm=None,
+    )
+    # The filtered amplitude row should reflect the LATEST run only.
+    assert len(shard._peak_amplitude_data) == 1
+    assert shard._peak_amplitude_data[0]["Peak Amplitudes"] == [0.5, 0.5]

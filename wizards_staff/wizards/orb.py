@@ -681,6 +681,86 @@ class Orb:
         """
         ws_run_pwc(self, *args, **kwargs)
 
+    def label_events(
+        self,
+        corpus_path: Union[str, Path],
+        labeler_id: str,
+        context: Optional[Dict[str, Any]] = None,
+        window_scale: Optional[float] = None,
+        ordering: str = "by_roi_then_time",
+        auto_advance: bool = True,
+        start_at: Optional[Union[int, str]] = None,
+    ) -> Any:
+        """
+        Open the multi-image hand-labeling UI across every shard.
+
+        This is the user-facing entry point for the trace-first event
+        labeler when you have more than one image to review. It returns
+        a :class:`~wizards_staff.labeling.multi_shard_labeler.MultiShardLabeler`
+        already wired to every shard in the orb; call ``.display()`` on
+        the result to render the widget in a notebook.
+
+        The biologist's mental model is intentionally
+        ``orb.run_all()`` → ``orb.label_events(...)`` → ``orb.refilter_events(...)``:
+        three verbs on the same noun, no shard juggling, no Python loops.
+
+        Args:
+            corpus_path: Path to the canonical labels CSV. Created on
+                first label and updated atomically after every action,
+                so labelers can stop and resume any time. Place this
+                somewhere shared if multiple labelers will collaborate.
+            labeler_id: Identifier for the human labeler (e.g. their
+                initials). Stored on every row for inter-rater
+                analysis. Canonicalized internally — see
+                :class:`~wizards_staff.labeling.event_labeler.EventLabeler`
+                for normalization rules.
+            context: Optional metadata stored on every corpus row.
+                Recognized keys include ``sampling_rate``, ``indicator``,
+                ``microscope``, ``cell_type``, ``experiment_id``.
+            window_scale: Width of the per-event trace window, in
+                multiples of FWHM. ``None`` (default) uses the
+                indicator-aware preset.
+            ordering: Event ordering passed to each child labeler.
+                Defaults to the biologist-friendly
+                ``"by_roi_then_time"``.
+            auto_advance: When True (default), the labeler jumps to
+                the next unfinished image automatically as soon as
+                the current image's events are all reviewed.
+            start_at: Optional starting position. ``None`` (default)
+                lands on the first image with unfinished work
+                (resume-on-reopen). An ``int`` selects a specific
+                position; a ``str`` selects by ``sample_name``.
+
+        Returns:
+            The configured :class:`MultiShardLabeler`. Call
+            ``.display()`` on it to render in a notebook.
+
+        Example::
+
+            labeler = orb.label_events(
+                corpus_path="event_labels_corpus.csv",
+                labeler_id="jrh",
+                context={"indicator": "GCaMP6s", "experiment_id": "tutorial-run"},
+            )
+            labeler.display()
+        """
+        # Lazy import so the heavy ipywidgets-aware module isn't pulled
+        # in at orb import time. The labeling subpackage itself is
+        # safe to import in headless contexts; only display() requires
+        # ipywidgets.
+        from wizards_staff.labeling import MultiShardLabeler
+
+        return MultiShardLabeler(
+            shards=list(self.shatter()),
+            corpus_path=str(corpus_path),
+            labeler_id=labeler_id,
+            context=context,
+            window_scale=window_scale,
+            ordering=ordering,
+            auto_advance=auto_advance,
+            start_at=start_at,
+        )
+
     def save(self, outfile: str) -> None:
         """
         Saves the Orb object to disk via pickle.

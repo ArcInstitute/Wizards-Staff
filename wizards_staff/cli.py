@@ -84,7 +84,7 @@ def parse_args():
                               'outlier detector. Loads published-kinetics '
                               'rise/decay/peak-height defaults from '
                               'INDICATOR_PRESETS. Examples: GCaMP6f, '
-                              'GCaMP6s, GCaMP6m, GCaMP7f, jGCaMP8f, '
+                              'GCaMP6s, GCaMP6m, GCaMP7f, GCaMP7s, jGCaMP8f, '
                               'jGCaMP8m, jGCaMP8s, jRGECO1a, jRCaMP1a, '
                               'GCaMP3. Required when working with anything '
                               'other than GCaMP6f-like green indicators; '

@@ -295,6 +295,20 @@ def _apply_event_filters(
         min_event_fwhm is not None or max_event_fwhm is not None
     )
 
+    # Stash the active Layer-2 bound configuration on the shard so
+    # downstream consumers (notably ``EventLabeler``) can mirror the
+    # SAME bounds when deciding which raw events to surface. We always
+    # stash, including when ``filter_events=False`` (the consumers then
+    # know the bounds are inactive and walk the full raw set). Both
+    # ``_run_all`` and ``Orb.refilter_events`` flow through this
+    # function, so the labeler always sees the most recently applied
+    # configuration without a parallel cache to keep in sync.
+    shard._active_filter_events = bool(filter_events)
+    shard._active_min_event_amplitude = min_event_amplitude
+    shard._active_max_event_amplitude = max_event_amplitude
+    shard._active_min_event_fwhm = min_event_fwhm
+    shard._active_max_event_fwhm = max_event_fwhm
+
     # ── Resolve the human-label drop set (layer 3) ────────────────────
     # Loaded once per shard up front so the per-ROI loop below can
     # apply it positionally without re-reading the corpus. ``drops`` is
@@ -875,7 +889,7 @@ def run_all(orb: "Orb",
             effect when ``filter_events=True``.
         indicator: Calcium indicator preset name forwarded to
             :func:`wizards_staff.stats.outliers.detect_waveform_outliers`.
-            When set (e.g. ``"GCaMP6s"``, ``"jGCaMP8m"``, ``"jRGECO1a"``)
+            When set (e.g. ``"GCaMP6s"``, ``"GCaMP7s"``, ``"jGCaMP8m"``, ``"jRGECO1a"``)
             the waveform detector loads published-kinetics defaults from
             ``INDICATOR_PRESETS`` instead of the legacy GCaMP6f-like
             template. Default ``None`` preserves the existing behavior
@@ -986,6 +1000,28 @@ def run_all(orb: "Orb",
     # Stash the outlier flags so Orb accessors and save_results can read them.
     orb._remove_outlier = remove_outlier
     orb._show_outlier = show_outlier
+
+    # Invalidate every orb-level cached DataFrame that ``_get_shard_data``
+    # builds lazily from the per-shard accumulators. The shards
+    # themselves are reset by ``_run_all`` (see ``Shard._reset_run_state``);
+    # the orb-side caches must drop in lockstep or accessors will keep
+    # serving the previous run's results even after the per-shard data
+    # has been refreshed. ``_outlier_data`` is included because outlier
+    # detection re-runs every call and its results feed the
+    # ``remove_outlier`` filter applied downstream. PWC caches are
+    # cleared in ``run_pwc`` itself (called below when ``group_name`` is
+    # provided), so we leave them alone here.
+    orb._rise_time_data = None
+    orb._fall_time_data = None
+    orb._fwhm_data = None
+    orb._frpm_data = None
+    orb._peak_amplitude_data = None
+    orb._max_peak_amplitude_data = None
+    orb._peak_to_peak_data = None
+    orb._mask_metrics_data = None
+    orb._silhouette_scores_data = None
+    orb._outlier_data = None
+    orb._event_drop_log = None
 
     # Announce per-event filtering policy up front so users know what they're
     # opting into vs. opting out of.
@@ -1345,6 +1381,18 @@ def _run_all(shard: Shard,
 
     shard._logger.info(f'Processing shard: {shard.sample_name}')
 
+    # Clear every accumulator ``_run_all`` is about to .append() into.
+    # Without this, calling ``orb.run_all`` more than once on the same
+    # orb (e.g. tuning ``zscore_threshold`` in a notebook) stacks the
+    # previous run's rows in front of the new ones. ``_apply_event_filters``
+    # builds a per-(sample, neuron) ``fwhm_lookup`` that keeps only the
+    # LAST appended row, but its surrounding loop walks EVERY amplitude
+    # row — so a stale row with a different event count trips the
+    # length-equality invariant and raises ``RuntimeError``. The reset
+    # is the single source of truth for re-runnability and must happen
+    # before any ``shard._*_data.append`` below.
+    shard._reset_run_state()
+
     # Get frame rate from metadata if not explicitly provided
     if frate is None:
         frate = int(shard.metadata['Frate'].iloc[0])
@@ -1363,6 +1411,16 @@ def _run_all(shard: Shard,
         plot=False, 
         silence=True,
     )
+    # Cache on the shard so downstream tools — most importantly
+    # ``EventLabeler`` — can read the exact mapping ``_run_all`` used
+    # rather than re-deriving it with default thresholds that might
+    # silently disagree with what was actually run. See
+    # ``EventLabeler._resolve_filtered_idx`` for the consumer side.
+    shard._filtered_idx_cache = [int(i) for i in filtered_idx]
+    shard._filtered_idx_params = {
+        "p_th": float(p_th),
+        "size_threshold": int(size_threshold),
+    }
     
     # ── Outlier detection ────────────────────────────────────────────
     if outlier_methods is None:

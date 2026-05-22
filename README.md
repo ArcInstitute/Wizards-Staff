@@ -111,8 +111,8 @@ red indicators).
 ```python
 orb.run_all(
     group_name="Well",
-    indicator="GCaMP6s",   # also: GCaMP6m, GCaMP7f, jGCaMP8f / 8m / 8s,
-                           # jRGECO1a, jRCaMP1a, GCaMP3
+    indicator="GCaMP6s",   # also: GCaMP6m, GCaMP7f, GCaMP7s,
+                           # jGCaMP8f / 8m / 8s, jRGECO1a, jRCaMP1a, GCaMP3
 )
 ```
 
@@ -144,23 +144,44 @@ into every per-event metric.
 ```python
 from pathlib import Path
 from wizards_staff import Orb
-from wizards_staff.labeling import EventLabeler
 
 orb = Orb(results_folder="...", metadata_file_path="...")
 
 # 1. Initial run with automatic QC.
 orb.run_all(group_name="Well", indicator="GCaMP6s", filter_events=True)
 
-# 2. Open the labeling widget on a shard. The corpus saves automatically.
-shard = next(orb.shatter())
+# 2. Open the labeling widget across every image in the dataset. One
+#    cell, one widget; prev/next-image buttons handle multi-image
+#    review without copy-pasted cells or for loops. The corpus saves
+#    automatically after every action.
 corpus = Path("event_labels_corpus.csv")
-labeler = EventLabeler(
-    shard,
+labeler = orb.label_events(
     corpus_path=str(corpus),
     labeler_id="your_initials",
     context={"indicator": "GCaMP6s", "experiment_id": "expt-001"},
+    auto_advance=True,   # jump to the next unfinished image automatically
+    # start_at=None,     # None resumes on the first unfinished image.
 )
 labeler.display()    # review events: t / f / u keys, or click buttons
+# Keys:
+#   overview:   i=investigate trace, r=reject whole trace (press twice
+#               to confirm), s=skip, p/n=prev/next trace
+#   per-event:  t=True, f=False, u=Unsure, j/k=next/prev event, b=back
+#   image:      use the prev/next image buttons or the dropdown.
+#
+# Only False labels remove events from the analysis. Unsure is stored
+# for calibration but does not filter. True records your agreement but
+# cannot recover an event already dropped by the amplitude/FWHM
+# bounds — labels only narrow the surviving set.
+#
+# Closing the notebook mid-session is fine: re-running this cell
+# resumes on the first image with unfinished work. When every image
+# is reviewed, a green completion banner names the exact
+# orb.refilter_events(...) call to run next.
+
+# (For programmatic single-image use — tests, calibration scripts,
+# or labeling exactly one shard — wizards_staff.labeling.EventLabeler
+# is still the underlying primitive.)
 
 # 3. Fold the labels into the analysis (cheap — no re-running of run_all).
 orb.refilter_events(
@@ -229,6 +250,7 @@ inter_df = orb.df_mn_pwc_inter  # Inter-group correlations
 For detailed usage instructions and examples, please refer to:
 
 - [Jupyter Notebook Tutorial](notebooks/tutorial-notebook.ipynb)
+- [Paired Drug Response Tutorial](notebooks/paired-drug-response.ipynb) — standalone workflow for paired baseline/dosing experiments
 - [API Reference](docs/api.md)
 
 
