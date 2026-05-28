@@ -17,55 +17,112 @@ Calcium imaging analysis toolkit for processing outputs from calcium imaging pip
 
 ## Table of Contents
 
+- [Requirements](#requirements)
 - [Installation](#installation)
-- [Brief Functions Overview](#wizards-staff-python-package---brief-function-overview)
+- [Quick Start](#quick-start)
+- [Getting Input Data](#getting-input-data)
+- [Data Requirements](#data-requirements)
+- [Examples](#examples)
+- [Documentation](#documentation)
+
+## Requirements
+
+- **Python** 3.11 or 3.12
+- **OS**: Linux or macOS. Windows is supported via WSL2 (CaImAn/TensorFlow
+  are not regularly tested on native Windows).
+- **Hardware**: a workstation-class machine. Expect roughly 1–4 GB RAM per
+  sample and a few hundred MB of disk per sample for typical recordings, so a
+  laptop handles a handful of samples and a larger node helps for big batches.
+  CPU-only is fine — no GPU is required (TensorFlow runs on CPU here).
+- **Build tooling**: installation compiles [CaImAn](https://github.com/flatironinstitute/CaImAn)
+  from source, so you need a C/C++ toolchain (`build-essential` on Linux,
+  the Xcode Command Line Tools on macOS) and a few minutes for the first
+  install.
 
 ## Installation
 
-### Clone the Repo
+> There is currently **no PyPI package, Docker image, or conda recipe** —
+> install from source as shown below. (Contributions welcome.)
 
-To download the latest version of this package, clone it from the repository:
+### 1. Clone the repo
 
 ```bash
-git clone git@github.com:ArcInstitute/Wizards-Staff.git
+git clone https://github.com/ArcInstitute/Wizards-Staff.git
 cd Wizards-Staff
 ```
 
-### Create a Virtual Environment (Optional but Recommended)
+### 2. Create an isolated environment
 
-Its recommended to create a virtual environment for Wizards-Staff as this ensures that your project dependencies are isolated. You can use mamba to create one:
+Any environment manager works. Pick one:
 
 ```bash
-mamba create -n wizards_staff python=3.11 -y
-mamba activate wizards_staff
+# Option A — venv (stdlib, no extra tooling)
+python3.11 -m venv .venv && source .venv/bin/activate
+
+# Option B — conda / mamba
+conda create -n wizards_staff python=3.11 -y && conda activate wizards_staff
+
+# Option C — uv
+uv venv --python 3.11 && source .venv/bin/activate
 ```
 
-### Install the Package
+A ready-made conda spec is also provided:
 
-To install the wizards_staff package within your virtual environment, from the command line run:
+```bash
+conda env create -f environment.yml && conda activate wizards_staff
+```
+
+### 3. Install the package
 
 ```bash
 pip install .
+```
+
+The notebook event-labeling widget is an optional extra:
+
+```bash
+pip install '.[labeling]'
 ```
 
 ---
 
 ## Quick Start
 
+Wizards-Staff analyzes the per-sample output files produced by a calcium
+imaging pipeline. A `results_folder` is just a directory of files named
+`<Sample>_dff-dat.npy`, `<Sample>_cnm-A.npy`, `<Sample>_cnm-idx.npy`,
+`<Sample>_minprojection.tif` (and optionally `<Sample>_masks.tif`), plus a
+`metadata.csv`:
+
+```
+my_results/
+├── Sample1_dff-dat.npy
+├── Sample1_cnm-A.npy
+├── Sample1_cnm-idx.npy
+├── Sample1_minprojection.tif
+├── Sample2_dff-dat.npy
+├── ...
+└── metadata.csv
+```
+
+**Don't have outputs yet?** See [Getting Input Data](#getting-input-data) for
+how to produce a `results_folder` by running Lizard-Wizard on your recordings.
+The Quick Start below assumes `results_folder` points at such a folder.
+
 ```python
 from wizards_staff import Orb
 
 # Initialize an Orb with your results folder and metadata file
 orb = Orb(
-    results_folder="/path/to/calcium_imaging_results", 
-    metadata_file_path="/path/to/metadata.csv"
+    results_folder="my_results",            # folder of *_dff-dat.npy etc.
+    metadata_file_path="my_results/metadata.csv"
 )
 
 # Run comprehensive analysis (all metrics)
 orb.run_all(
     group_name=None,  # Group samples by this metadata column
-    frate=30,           # Frame rate of recording
-    show_plots=True,    # Display plots during analysis
+    frate=30,           # Frame rate of recording (fps)
+    show_plots=True,    # Display plots; set False on headless servers / batch jobs
     save_files=True     # Save results to disk
 )
 
@@ -74,6 +131,21 @@ rise_time_df = orb.rise_time_data
 fwhm_df = orb.fwhm_data
 frpm_df = orb.frpm_data
 ```
+
+Running on a remote VM, container, or HPC batch job? See the
+[deployment notes](docs/deployment.md) for headless plotting and reading
+from object storage (S3/GCS/Azure).
+
+## Getting Input Data
+
+You have two options:
+
+1. **Run [Lizard-Wizard](https://github.com/ArcInstitute/Lizard-Wizard)**
+   on your raw microscope recordings. Its output directory is exactly the
+   `results_folder` Wizards-Staff expects.
+2. **Bring outputs from another pipeline** — any tool that can emit the
+   `*_dff-dat.npy` / `*_cnm-A.npy` / `*_cnm-idx.npy` / `*_minprojection.tif`
+   layout above works.
 
 ## Data Requirements
 
@@ -247,11 +319,20 @@ inter_df = orb.df_mn_pwc_inter  # Inter-group correlations
 
 ## Documentation
 
+The tutorials are Jupyter notebooks. To run them outside a managed
+JupyterHub, install Jupyter into your environment and launch it:
+
+```bash
+pip install jupyterlab     # if not already installed
+jupyter lab                # on a remote VM add: --no-browser --ip=0.0.0.0
+```
+
 For detailed usage instructions and examples, please refer to:
 
 - [Jupyter Notebook Tutorial](notebooks/tutorial-notebook.ipynb)
 - [Paired Drug Response Tutorial](notebooks/paired-drug-response.ipynb) — standalone workflow for paired baseline/dosing experiments
 - [API Reference](docs/api.md)
+- [Deployment notes (cloud / HPC / containers)](docs/deployment.md)
 
 
 ## License
