@@ -8,6 +8,32 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ### Added
 
+- **`save_baseline=True` on `run_all` writes a pre-filtration companion
+  in a single pass.** Previously biologists who wanted to keep both the
+  cleaned (outlier-removed, event-filtered) and the un-cleaned datasets
+  on disk had to call `run_all` twice with different parameters, paying
+  the full spike-detection / outlier-detection / PWC cost a second time
+  just to get a baseline reference. The new `save_baseline=True` flag
+  re-uses the per-shard `_raw_*_data` lists already accumulated during
+  the main pass, re-applies `_apply_event_filters(filter_events=False,
+  ...)` per shard to derive the un-cleaned view, transiently flips
+  `_remove_outlier=False`, and writes the baseline CSVs + run report to
+  `baseline_output_dir` (default `<output_dir>/baseline/`). The post-
+  filter view is restored on `orb` before the call returns, so
+  downstream consumers (e.g. tutorial Section 5.1's `EventLabeler`)
+  keep seeing the cleaned data they expect. Cost is roughly the cost of
+  one extra `save_results` call — no spike redetection, no outlier
+  redetection, no PWC redo, no parallel worker pool. Validates that
+  `save_files=True` (warns + ignores otherwise) and that
+  `baseline_output_dir != output_dir` (raises `ValueError` — the exact
+  silent-overwrite footgun the feature exists to prevent). Plots are
+  emitted for the post-filter folder only; the baseline gets CSVs and
+  (when `generate_report=True`) the markdown run report describing the
+  un-cleaned dataset. The `labels_corpus` filter is also bypassed for
+  the baseline so the comparison reference is truly un-cleaned. The
+  `notebooks/tutorial-notebook.ipynb` Section 5 cell now demonstrates
+  the single-call pattern (writes `OUTPUT_FOLDER_POST_FILTER` cleaned
+  + `OUTPUT_FOLDER` baseline in one `run_all` invocation).
 - **Auto-skip past already-reviewed traces in `EventLabeler`.** Previously
   the labeler would (a) open at ROI 0 regardless of which ROIs had
   already been reviewed in earlier sessions, and (b) advance to the

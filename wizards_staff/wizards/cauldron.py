@@ -772,6 +772,179 @@ def _apply_event_filters(
     }
 
 
+# ---------------------------------------------------------------------------
+# Baseline (pre-filter) save helpers
+# ---------------------------------------------------------------------------
+# ``save_baseline=True`` on ``run_all`` writes a second copy of every metric
+# CSV — derived from the *raw* per-shard event lists with outlier removal and
+# per-event filtering both disabled — to ``baseline_output_dir``. The cheap
+# path: re-apply ``_apply_event_filters(filter_events=False)`` per shard
+# (rebuilds ``_*_data`` from ``_raw_*_data`` in milliseconds), flip
+# ``orb._remove_outlier`` off, invalidate the orb-level metric caches, write,
+# and restore the post-filter view. No spike redetection, no PWC redo, no
+# parallel worker pool — by design.
+
+# Orb-level cached DataFrames that depend on event-filter state. Must be
+# invalidated whenever the per-shard ``_*_data`` lists are rebuilt (either by
+# ``run_all`` itself or by the baseline pass below) so the next accessor read
+# rebuilds from the freshly-filtered shard lists instead of serving stale rows.
+# ``outlier_data`` and PWC caches are independent of the event-filter bounds
+# and intentionally left alone here — toggling ``_remove_outlier`` affects the
+# accessor's *filter step*, not the underlying outlier flags.
+_EVENT_FILTER_CACHE_ATTRS = (
+    "_rise_time_data",
+    "_fall_time_data",
+    "_fwhm_data",
+    "_frpm_data",
+    "_peak_amplitude_data",
+    "_max_peak_amplitude_data",
+    "_peak_to_peak_data",
+    "_event_drop_log",
+)
+
+
+def _invalidate_event_filter_caches(orb: "Orb") -> None:
+    """Reset the orb-level metric caches that depend on the active event
+    filter / outlier-removal configuration, forcing the next accessor read
+    to rebuild from the per-shard lists."""
+    for attr in _EVENT_FILTER_CACHE_ATTRS:
+        setattr(orb, attr, None)
+
+
+def _save_pre_filter_baseline(
+    orb: "Orb",
+    *,
+    baseline_output_dir: str,
+    filter_events: bool,
+    min_event_amplitude: Optional[float],
+    max_event_amplitude: Optional[float],
+    min_event_fwhm: Optional[int],
+    max_event_fwhm: Optional[int],
+    labels_corpus: Optional[Union[str, Path]],
+    on_disagreement: str,
+    generate_report: bool,
+    report_params: dict,
+) -> None:
+    """Save a pre-filtration baseline of every metric CSV to
+    ``baseline_output_dir``, then restore the post-filter view on ``orb``.
+
+    "Pre-filtration" here means: outlier neurons NOT removed (every neuron
+    kept) AND per-event filtering disabled (every detected event kept,
+    minus the unconditional NaN/Inf scrub that always fires). Human labels
+    passed via ``labels_corpus`` are also bypassed for the baseline — the
+    baseline is the un-cleaned reference, not a partially-cleaned view.
+
+    The function is a pure ``Orb`` state transition: snapshot the current
+    outlier flag, switch every shard to the unfiltered view via
+    ``_apply_event_filters(filter_events=False, ...=None)``, write CSVs +
+    (optionally) the baseline run report, then re-apply the original
+    filter bounds and restore the outlier flag so downstream consumers
+    see exactly the post-filter view they had before this call.
+
+    Cheap by design: re-uses the existing ``_raw_*_data`` lists stored on
+    each shard during ``run_all``; no spike redetection, no outlier
+    redetection, no PWC redo, no parallel worker pool.
+
+    Args:
+        orb: The fully-processed ``Orb`` instance.
+        baseline_output_dir: Where the baseline CSVs are written. Created
+            if it doesn't exist.
+        filter_events / min_event_* / max_event_* / labels_corpus /
+            on_disagreement: The filter parameters used by the originating
+            ``run_all`` call. Used solely to restore the post-filter view
+            after the baseline save completes.
+        generate_report: When True, write ``run_report.md`` (and the
+            ``run_report/`` histogram folder) into ``baseline_output_dir``
+            describing the baseline view.
+        report_params: The ``run_all`` parameter dict that was passed to
+            the post-filter ``generate_run_report`` call. Cloned and
+            mutated (``remove_outlier=False``, ``filter_events=False``,
+            etc.) for the baseline report.
+    """
+    orig_remove_outlier = orb._remove_outlier
+    orig_show_outlier = orb._show_outlier
+
+    # ── Switch to the baseline (un-cleaned, unfiltered) view ──────────
+    orb._remove_outlier = False
+    # ``with_outliers/`` companions are redundant when remove_outlier=False
+    # (the main DataFrames already contain every neuron), so suppress them
+    # for the baseline save regardless of the caller's show_outlier setting.
+    orb._show_outlier = False
+    for shard in orb._shards.values():
+        _apply_event_filters(
+            shard,
+            filter_events=False,
+            min_event_amplitude=None,
+            max_event_amplitude=None,
+            min_event_fwhm=None,
+            max_event_fwhm=None,
+            labels_corpus=None,
+            on_disagreement=on_disagreement,
+            log_summary=False,
+        )
+    _invalidate_event_filter_caches(orb)
+
+    print(
+        f'save_baseline=True: writing pre-filtration baseline (no outlier '
+        f'removal, no event filtering) to {baseline_output_dir}...',
+        flush=True,
+    )
+
+    os.makedirs(baseline_output_dir, exist_ok=True)
+
+    # Baseline run report — write BEFORE the CSV dump so the report's
+    # describe() tables and histograms reflect the baseline accessors.
+    if generate_report:
+        baseline_params = dict(report_params)
+        baseline_params["remove_outlier"] = False
+        baseline_params["show_outlier"] = False
+        baseline_params["filter_events"] = False
+        baseline_params["min_event_amplitude"] = None
+        baseline_params["max_event_amplitude"] = None
+        baseline_params["min_event_fwhm"] = None
+        baseline_params["max_event_fwhm"] = None
+        baseline_params["labels_corpus"] = None
+        try:
+            generate_run_report(
+                orb,
+                params=baseline_params,
+                output_dir=baseline_output_dir,
+                save_files=True,
+            )
+        except Exception as e:
+            print(
+                f'WARNING: baseline run report generation failed: {e}',
+                file=sys.stderr, flush=True,
+            )
+
+    try:
+        orb.save_results(baseline_output_dir)
+        print(f'Baseline saved to {baseline_output_dir}.', flush=True)
+    finally:
+        # ── Always restore the post-filter view, even if save_results raised ─
+        orb._remove_outlier = orig_remove_outlier
+        orb._show_outlier = orig_show_outlier
+        for shard in orb._shards.values():
+            try:
+                _apply_event_filters(
+                    shard,
+                    filter_events=filter_events,
+                    min_event_amplitude=min_event_amplitude,
+                    max_event_amplitude=max_event_amplitude,
+                    min_event_fwhm=min_event_fwhm,
+                    max_event_fwhm=max_event_fwhm,
+                    labels_corpus=labels_corpus,
+                    on_disagreement=on_disagreement,
+                    log_summary=False,
+                )
+            except Exception as e:
+                orb._logger.warning(
+                    f"_save_pre_filter_baseline: failed to restore "
+                    f"post-filter view for shard {shard.sample_name}: {e}"
+                )
+        _invalidate_event_filter_caches(orb)
+
+
 def run_all(orb: "Orb", 
             frate: int=None, 
             zscore_threshold: int=3, 
@@ -805,6 +978,8 @@ def run_all(orb: "Orb",
             labels_corpus: Optional[Union[str, Path]]=None,
             on_disagreement: str="drop",
             generate_report: bool=True,
+            save_baseline: bool=False,
+            baseline_output_dir: Optional[str]=None,
             **kwargs
             ) -> None:
     """
@@ -936,6 +1111,29 @@ def run_all(orb: "Orb",
             histograms for each metric are saved under
             ``output_dir/run_report/``. Set to False to silence for batch or
             CI runs.
+        save_baseline: If True (and ``save_files=True``), additionally write
+            a *pre-filtration* baseline of every metric CSV — derived from
+            the raw per-shard event lists with ``remove_outlier=False``
+            and ``filter_events=False`` — to ``baseline_output_dir``. The
+            baseline pass re-uses the ``_raw_*_data`` lists already stored
+            on each shard during the main pass, so it is essentially free
+            (no spike redetection, no outlier redetection, no PWC redo,
+            no parallel worker pool). Lets you compare cleaned vs.
+            un-cleaned results on disk without paying for a second full
+            ``run_all`` invocation. Plots are NOT regenerated for the
+            baseline — only CSVs and (when ``generate_report=True``) the
+            markdown run report. ``labels_corpus`` is also bypassed for
+            the baseline so the comparison reference is truly un-cleaned.
+            After the baseline save completes, the post-filter view is
+            restored on ``orb`` so downstream consumers (e.g. Section 5.1
+            of the tutorial notebook) see exactly the cleaned data they
+            had before the baseline save. Default False; has no effect
+            when ``save_files=False`` (a warning is logged).
+        baseline_output_dir: Where to write the baseline CSVs when
+            ``save_baseline=True``. Defaults to ``<output_dir>/baseline/``
+            so the baseline lives alongside the cleaned results. Pass an
+            absolute path (e.g. ``OUTPUT_FOLDER_PRE_FILTER``) to land it
+            in a sibling folder instead. Ignored when ``save_baseline=False``.
         kwargs: Additional keyword arguments that will be passed to run_pwc
     """
     # Check if the output directory exists
@@ -996,6 +1194,40 @@ def run_all(orb: "Orb",
             "show_outlier=True has no effect without remove_outlier=True; ignoring."
         )
         show_outlier = False
+
+    # save_baseline requires save_files — the baseline pass writes CSVs
+    # (and optionally a run report) to disk; there is no in-memory analogue.
+    if save_baseline and not save_files:
+        orb._logger.warning(
+            "save_baseline=True has no effect without save_files=True; ignoring."
+        )
+        save_baseline = False
+    if save_baseline and not (remove_outlier or filter_events or labels_corpus is not None):
+        orb._logger.warning(
+            "save_baseline=True but remove_outlier=False, filter_events=False, "
+            "and labels_corpus is None — the baseline will be byte-identical to "
+            "the main save. Proceeding anyway."
+        )
+    if save_baseline:
+        if baseline_output_dir is None:
+            baseline_output_dir = os.path.join(
+                os.path.expanduser(output_dir), "baseline"
+            )
+        else:
+            baseline_output_dir = os.path.expanduser(baseline_output_dir)
+        # Reject the silently-overwriting case where the baseline would
+        # land in the same folder as the main save — that's the exact
+        # footgun this feature exists to prevent.
+        if os.path.abspath(baseline_output_dir) == os.path.abspath(
+            os.path.expanduser(output_dir)
+        ):
+            raise ValueError(
+                f"save_baseline=True requires baseline_output_dir to differ "
+                f"from output_dir; both resolve to "
+                f"{os.path.abspath(baseline_output_dir)!r}. Pass a separate "
+                f"path (or leave baseline_output_dir=None to default to "
+                f"<output_dir>/baseline/)."
+            )
 
     # Stash the outlier flags so Orb accessors and save_results can read them.
     orb._remove_outlier = remove_outlier
@@ -1278,29 +1510,31 @@ def run_all(orb: "Orb",
     # Build a markdown summary of parameters, per-sample counts, outlier
     # impact, and distribution statistics for every per-event metric. Always
     # prints to stdout; writes to disk only when save_files=True.
+    # ``report_params`` is built unconditionally (cheap) so the baseline save
+    # below can clone-and-mutate it without re-deriving every field.
+    report_params = {
+        "frate": frate,
+        "zscore_threshold": zscore_threshold,
+        "percentage_threshold": percentage_threshold,
+        "p_th": p_th,
+        "size_threshold": size_threshold,
+        "min_clusters": min_clusters,
+        "max_clusters": max_clusters,
+        "group_name": group_name,
+        "threads": threads,
+        "outlier_threshold": outlier_threshold,
+        "outlier_methods": tuple(sorted(outlier_methods)) if outlier_methods else (),
+        "remove_outlier": remove_outlier,
+        "show_outlier": show_outlier,
+        "filter_events": filter_events,
+        "min_event_amplitude": min_event_amplitude,
+        "max_event_amplitude": max_event_amplitude,
+        "min_event_fwhm": min_event_fwhm,
+        "max_event_fwhm": max_event_fwhm,
+        "labels_corpus": str(labels_corpus) if labels_corpus is not None else None,
+        "on_disagreement": on_disagreement,
+    }
     if generate_report:
-        report_params = {
-            "frate": frate,
-            "zscore_threshold": zscore_threshold,
-            "percentage_threshold": percentage_threshold,
-            "p_th": p_th,
-            "size_threshold": size_threshold,
-            "min_clusters": min_clusters,
-            "max_clusters": max_clusters,
-            "group_name": group_name,
-            "threads": threads,
-            "outlier_threshold": outlier_threshold,
-            "outlier_methods": tuple(sorted(outlier_methods)) if outlier_methods else (),
-            "remove_outlier": remove_outlier,
-            "show_outlier": show_outlier,
-            "filter_events": filter_events,
-            "min_event_amplitude": min_event_amplitude,
-            "max_event_amplitude": max_event_amplitude,
-            "min_event_fwhm": min_event_fwhm,
-            "max_event_fwhm": max_event_fwhm,
-            "labels_corpus": str(labels_corpus) if labels_corpus is not None else None,
-            "on_disagreement": on_disagreement,
-        }
         try:
             generate_run_report(
                 orb,
@@ -1319,6 +1553,27 @@ def run_all(orb: "Orb",
         print(f'Saving results to {output_dir}...', flush=True)
         orb.save_results(output_dir)
         print('Results saved.', flush=True)
+
+    # ── Pre-filtration baseline save (opt-in) ─────────────────────────
+    # When the caller passed save_baseline=True, also dump an un-cleaned
+    # reference set of CSVs to ``baseline_output_dir``. Cheap: re-uses the
+    # per-shard ``_raw_*_data`` lists, no spike redetection. Restores the
+    # post-filter view on ``orb`` before returning so downstream code keeps
+    # seeing the cleaned data it expects.
+    if save_baseline:
+        _save_pre_filter_baseline(
+            orb,
+            baseline_output_dir=baseline_output_dir,
+            filter_events=filter_events,
+            min_event_amplitude=min_event_amplitude,
+            max_event_amplitude=max_event_amplitude,
+            min_event_fwhm=min_event_fwhm,
+            max_event_fwhm=max_event_fwhm,
+            labels_corpus=labels_corpus,
+            on_disagreement=on_disagreement,
+            generate_report=generate_report,
+            report_params=report_params,
+        )
 
 def _run_all_safe(shard: Shard, func) -> Shard:
     """

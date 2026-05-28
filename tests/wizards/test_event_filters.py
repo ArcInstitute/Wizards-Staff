@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import sys
 import types
 from pathlib import Path
@@ -1721,3 +1722,239 @@ def test_apply_event_filters_after_reset_does_not_raise(cauldron):
     # The filtered amplitude row should reflect the LATEST run only.
     assert len(shard._peak_amplitude_data) == 1
     assert shard._peak_amplitude_data[0]["Peak Amplitudes"] == [0.5, 0.5]
+
+
+# ---------------------------------------------------------------------------
+# Tests: save_baseline (pre-filtration companion save on run_all)
+# ---------------------------------------------------------------------------
+# Exercise ``_save_pre_filter_baseline`` directly rather than going through
+# ``run_all`` because run_all wraps the entire spike-detection / outlier /
+# plotting / PWC pipeline; the baseline helper is a pure ``Orb`` state
+# transition and is fully exercisable with the synthetic shards used by the
+# rest of this file. ``orb.save_results`` is monkeypatched to a recorder so
+# the tests don't have to construct a full PWC / mask DataFrame surface just
+# to satisfy the default CSV-save loop.
+def _make_filtered_orb(cauldron):
+    """Build an orb whose shards have been put through ``_apply_event_filters``
+    with strict bounds, so the in-memory ``_*_data`` lists reflect a
+    post-filter view and ``_raw_*_data`` retains the un-cleaned events.
+    Marks one neuron as an outlier so the baseline pass can also exercise
+    the ``_remove_outlier`` toggle."""
+    # Neuron 0: two events, only one survives amplitude>=0.05.
+    # Neuron 1 (the "outlier"): three events, all survive amplitude bound,
+    # but the neuron itself is flagged as an outlier so the post-filter
+    # accessor (with _remove_outlier=True) would drop the whole row.
+    shard = _make_shard(per_neuron_events=[
+        [_ev(0.5, 50), _ev(0.001, 100)],
+        [_ev(0.4, 200), _ev(0.6, 280), _ev(0.7, 360)],
+    ])
+    # Apply the strict post-filter bounds so the in-memory lists match
+    # what run_all would have produced at the call site.
+    cauldron._apply_event_filters(
+        shard,
+        filter_events=True,
+        min_event_amplitude=0.05,
+        max_event_amplitude=10.0,
+        min_event_fwhm=2,
+        max_event_fwhm=None,
+    )
+    # Mark neuron 1 as an outlier across every per-event metric. This is
+    # what the outlier-detection step would have stamped during run_all.
+    for attr in (
+        "_raw_peak_amplitude_data", "_raw_fwhm_data", "_raw_rise_time_data",
+        "_raw_fall_time_data", "_raw_peak_to_peak_data", "_raw_frpm_data",
+        "_peak_amplitude_data", "_fwhm_data", "_rise_time_data",
+        "_fall_time_data", "_peak_to_peak_data", "_frpm_data",
+    ):
+        for row in getattr(shard, attr):
+            if row["Neuron"] == 1:
+                row["is_outlier"] = True
+
+    orb = _make_orb_with_shards([shard])
+    # Post-filter state on the orb: outlier removal active, filtering active.
+    orb._remove_outlier = True
+    orb._show_outlier = False
+    return orb, shard
+
+
+def test_save_baseline_writes_unfiltered_events(cauldron):
+    """The baseline save must surface every raw event (and every neuron),
+    even when the post-filter view has dropped both an outlier neuron and
+    a below-amplitude event."""
+    orb, shard = _make_filtered_orb(cauldron)
+
+    # Sanity-check the post-filter view BEFORE the baseline pass.
+    pre_post_filter_n_events_n0 = len(
+        shard._peak_amplitude_data[0]["Peak Amplitudes"]
+    )
+    assert pre_post_filter_n_events_n0 == 1, (
+        "neuron 0 should have 1 event surviving amplitude>=0.05 "
+        "(the 0.001 event is rejected)"
+    )
+
+    recorded = {}
+
+    def _stub_save_results(outdir, result_names=None):
+        # Snapshot the orb state at the moment save_results would have
+        # written CSVs — this is what the baseline pass is supposed to
+        # be writing to disk.
+        recorded["outdir"] = outdir
+        recorded["remove_outlier"] = orb._remove_outlier
+        recorded["show_outlier"] = orb._show_outlier
+        recorded["n_events_n0"] = len(
+            shard._peak_amplitude_data[0]["Peak Amplitudes"]
+        )
+        recorded["n_events_n1"] = len(
+            shard._peak_amplitude_data[1]["Peak Amplitudes"]
+        )
+        recorded["n_rows_fwhm"] = len(shard._fwhm_data)
+
+    orb.save_results = _stub_save_results
+
+    cauldron._save_pre_filter_baseline(
+        orb,
+        baseline_output_dir="/tmp/wizards-staff-baseline-test",
+        filter_events=True,
+        min_event_amplitude=0.05,
+        max_event_amplitude=10.0,
+        min_event_fwhm=2,
+        max_event_fwhm=None,
+        labels_corpus=None,
+        on_disagreement="drop",
+        generate_report=False,
+        report_params={},
+    )
+
+    # ── Verify the baseline save saw the un-cleaned view ──────────────
+    assert recorded["outdir"] == "/tmp/wizards-staff-baseline-test"
+    assert recorded["remove_outlier"] is False, (
+        "baseline pass must temporarily flip _remove_outlier off so "
+        "every neuron lands in the saved CSVs"
+    )
+    assert recorded["show_outlier"] is False, (
+        "baseline pass must suppress the with_outliers/ companion — "
+        "redundant when remove_outlier=False"
+    )
+    assert recorded["n_events_n0"] == 2, (
+        "baseline must restore the 0.001 event that was dropped by the "
+        "amplitude>=0.05 bound"
+    )
+    assert recorded["n_events_n1"] == 3, (
+        "baseline must keep every event on the (outlier-flagged) neuron 1"
+    )
+    assert recorded["n_rows_fwhm"] == 2, (
+        "baseline FWHM must include both neurons, including the one flagged "
+        "as an outlier"
+    )
+
+
+def test_save_baseline_restores_post_filter_view(cauldron):
+    """After the baseline save completes, the orb must be back in the exact
+    post-filter state it had before — same _remove_outlier flag, same
+    filter bounds applied to every shard. Downstream cells (e.g. tutorial
+    Section 5.1) read the orb after run_all and would silently see the
+    wrong dataset if this didn't hold."""
+    orb, shard = _make_filtered_orb(cauldron)
+
+    orb.save_results = lambda outdir, result_names=None: None
+
+    cauldron._save_pre_filter_baseline(
+        orb,
+        baseline_output_dir="/tmp/wizards-staff-baseline-test",
+        filter_events=True,
+        min_event_amplitude=0.05,
+        max_event_amplitude=10.0,
+        min_event_fwhm=2,
+        max_event_fwhm=None,
+        labels_corpus=None,
+        on_disagreement="drop",
+        generate_report=False,
+        report_params={},
+    )
+
+    # Outlier flag restored.
+    assert orb._remove_outlier is True
+    # Filter bounds re-applied per shard: the 0.001 event is gone again.
+    assert len(shard._peak_amplitude_data[0]["Peak Amplitudes"]) == 1
+    assert shard._peak_amplitude_data[0]["Peak Amplitudes"] == [0.5]
+    # Orb-level caches were invalidated, so a fresh accessor read sees the
+    # post-filter view (outlier neuron 1 dropped, neuron 0's event filtered).
+    pa = orb.peak_amplitude_data
+    assert (pa["Neuron"] == 1).sum() == 0, (
+        "outlier neuron must be dropped from peak_amplitude_data after "
+        "the baseline pass restores _remove_outlier=True"
+    )
+    # Active filter state must mirror what was passed in.
+    assert shard._active_filter_events is True
+    assert shard._active_min_event_amplitude == 0.05
+    assert shard._active_max_event_amplitude == 10.0
+
+
+def test_save_baseline_restores_view_even_when_save_raises(cauldron):
+    """If ``orb.save_results`` raises mid-write, the post-filter view must
+    still be restored — otherwise a transient disk error would silently
+    poison every downstream read on the same Orb."""
+    orb, shard = _make_filtered_orb(cauldron)
+
+    def _explode(*args, **kwargs):
+        raise OSError("disk full")
+
+    orb.save_results = _explode
+
+    with pytest.raises(OSError, match="disk full"):
+        cauldron._save_pre_filter_baseline(
+            orb,
+            baseline_output_dir="/tmp/wizards-staff-baseline-test",
+            filter_events=True,
+            min_event_amplitude=0.05,
+            max_event_amplitude=10.0,
+            min_event_fwhm=2,
+            max_event_fwhm=None,
+            labels_corpus=None,
+            on_disagreement="drop",
+            generate_report=False,
+            report_params={},
+        )
+
+    # Critical invariant: even after the exception, the orb is in
+    # post-filter state and the filtered view is intact.
+    assert orb._remove_outlier is True
+    assert len(shard._peak_amplitude_data[0]["Peak Amplitudes"]) == 1
+
+
+def test_save_baseline_default_baseline_dir_under_output(cauldron, tmp_path):
+    """When ``baseline_output_dir=None`` is passed to ``run_all``, the
+    helper writes to ``<output_dir>/baseline/`` so the baseline lives next
+    to the cleaned results by default. Verified here by checking that the
+    helper happily creates the directory tree on first call."""
+    orb, shard = _make_filtered_orb(cauldron)
+
+    seen_outdirs = []
+
+    def _record(outdir, result_names=None):
+        seen_outdirs.append(outdir)
+
+    orb.save_results = _record
+
+    baseline_dir = str(tmp_path / "post_filter" / "baseline")
+    assert not os.path.exists(baseline_dir)
+
+    cauldron._save_pre_filter_baseline(
+        orb,
+        baseline_output_dir=baseline_dir,
+        filter_events=True,
+        min_event_amplitude=0.05,
+        max_event_amplitude=10.0,
+        min_event_fwhm=2,
+        max_event_fwhm=None,
+        labels_corpus=None,
+        on_disagreement="drop",
+        generate_report=False,
+        report_params={},
+    )
+
+    assert os.path.isdir(baseline_dir), (
+        "_save_pre_filter_baseline must create baseline_output_dir before "
+        "calling save_results"
+    )
+    assert seen_outdirs == [baseline_dir]
