@@ -2607,13 +2607,7 @@ class EventLabeler:
             lambda _b: self.next_unreviewed_trace()
         )
 
-        def _on_cmd_change(change: Dict[str, Any]) -> None:
-            value = change.get("new", "") or ""
-            if not value:
-                return
-            ch = value.strip().lower()[:1]
-            # Always reset the box, regardless of dispatch outcome.
-            cmd.value = ""
+        def _keymap_for_view() -> Dict[str, Any]:
             # Legacy aliases kept for muscle memory / scripts:
             #   - ``w`` was the original key for "reject whole trace"
             #     (pre-trace-first UX). Kept in overview only —
@@ -2625,7 +2619,7 @@ class EventLabeler:
             #     action was renamed to "investigate trace" (``i``).
             #     Kept for biologists with existing muscle memory.
             if self._view == "overview":
-                mapping = {
+                return {
                     "i": self.investigate_trace,
                     "d": self.investigate_trace,
                     "r": self.reject_whole_trace,
@@ -2636,23 +2630,42 @@ class EventLabeler:
                     "n": self.next_trace,
                     "m": self.next_unreviewed_trace,
                 }
-            else:
-                mapping = {
-                    "t": lambda: _on_label("True"),
-                    "f": lambda: _on_label("False"),
-                    "u": lambda: _on_label("Unsure"),
-                    "j": lambda: self._advance_event(+1),
-                    "k": lambda: self._advance_event(-1),
-                    "b": self.back_to_overview,
-                    # ``z`` works in per-event view too, on the off
-                    # chance the labeler invokes undo while still
-                    # investigating: it doesn't move the cursor of
-                    # its own accord, just restores labels.
-                    "z": self.undo_trace_rejection,
-                }
-            action = mapping.get(ch)
-            if action is not None:
-                action()
+            return {
+                "t": lambda: _on_label("True"),
+                "f": lambda: _on_label("False"),
+                "u": lambda: _on_label("Unsure"),
+                "j": lambda: self._advance_event(+1),
+                "k": lambda: self._advance_event(-1),
+                "b": self.back_to_overview,
+                # ``z`` works in per-event view too, on the off
+                # chance the labeler invokes undo while still
+                # investigating: it doesn't move the cursor of
+                # its own accord, just restores labels.
+                "z": self.undo_trace_rejection,
+            }
+
+        def _on_cmd_change(change: Dict[str, Any]) -> None:
+            value = change.get("new", "") or ""
+            if not value:
+                return
+            # Always reset the box, regardless of dispatch outcome.
+            cmd.value = ""
+            # Dispatch EVERY character, not just the first. ipywidgets
+            # coalesces keystrokes typed in quick succession into a
+            # single ``value`` change — so the two-press reject confirm
+            # ("press 'r' again to confirm") frequently arrives as a
+            # single ``"rr"`` change. Taking only ``value[:1]`` silently
+            # dropped the confirming press, leaving the trace armed and
+            # the "REJECT ARMED" badge stuck on screen. Walking each
+            # character commits the second ``r`` (and is generally
+            # correct: no buffered keystroke is ever dropped). The
+            # keymap is recomputed per character because a key can flip
+            # the view mid-sequence (e.g. ``i`` opens the per-event
+            # view, after which ``t``/``f``/``u`` should apply).
+            for ch in value.strip().lower():
+                action = _keymap_for_view().get(ch)
+                if action is not None:
+                    action()
 
         cmd.observe(_on_cmd_change, names="value")
 
