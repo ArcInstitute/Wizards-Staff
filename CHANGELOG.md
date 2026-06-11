@@ -8,6 +8,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ### Added
 
+- **`high_amplitude` neuron-level outlier detector + `outlier_max_dff`.**
+  Adds `detect_high_amplitude_neurons` and wires a new
+  `"high_amplitude"` key into `run_all(outlier_methods=...)`, gated by the
+  new `outlier_max_dff` parameter (default `20.0` ΔF/F; `0`/`None`
+  disables). Unlike the existing `low_pnr` / `waveform` / `spectral`
+  detectors — which score each neuron *relative* to the rest of the well
+  with a modified Z-score — this detector applies a fixed **absolute**
+  ΔF/F ceiling and flags (and, with `remove_outlier=True`, removes) any
+  component whose peak ΔF/F (`max − median`, configurable via `baseline`)
+  exceeds it. This closes a real gap: a lone motion / edge / debris
+  artifact in an otherwise-silent well (e.g. a thin off-center ROI on a
+  spheroid edge peaking at 80 ΔF/F) looks like the *best* component to
+  every relative detector — highest PNR, calcium-like shape, most power in
+  the biological band — so none of them flag it at any threshold, and it
+  then contaminates the population-mean trace. It is also distinct from
+  the event-level `max_event_amplitude` filter, which only prunes
+  individual events from the per-event metric tables and never removes the
+  trace from per-neuron plots / population means. `combine_neuron_qc`
+  gains a `high_amplitude_result=` argument and surfaces `peak_dff` /
+  `is_high_amplitude` columns. Not enabled by default (must be added to
+  `outlier_methods`), so existing pipelines are unchanged.
 - **`save_baseline=True` on `run_all` writes a pre-filtration companion
   in a single pass.** Previously biologists who wanted to keep both the
   cleaned (outlier-removed, event-filtered) and the un-cleaned datasets

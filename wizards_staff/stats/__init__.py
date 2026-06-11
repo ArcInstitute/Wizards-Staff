@@ -86,6 +86,7 @@ from .outliers import (
     detect_neuron_outliers,
     detect_waveform_outliers,
     detect_spectral_outliers,
+    detect_high_amplitude_neurons,
     combine_neuron_qc,
     detect_outliers,
     visualize_outliers,
@@ -167,6 +168,7 @@ __all__ = [
     "detect_neuron_outliers",  # deprecated alias of detect_low_pnr_neurons
     "detect_waveform_outliers",
     "detect_spectral_outliers",
+    "detect_high_amplitude_neurons",
     "combine_neuron_qc",
     "detect_outliers",
     "visualize_outliers",

@@ -764,6 +764,129 @@ def detect_spectral_outliers(
     }
 
 
+def detect_high_amplitude_neurons(
+    dff_dat: np.ndarray,
+    filtered_idx: np.ndarray,
+    max_dff: float = 20.0,
+    baseline: str = "median",
+) -> Dict:
+    """Flag neurons whose peak ΔF/F exceeds an **absolute** ceiling.
+
+    Unlike :func:`detect_low_pnr_neurons`, :func:`detect_waveform_outliers`
+    and :func:`detect_spectral_outliers` — all of which score each neuron
+    *relative* to the rest of the population — this detector applies a fixed
+    physical threshold. That is deliberate: a single huge motion / edge /
+    debris artifact in an otherwise-silent well looks like the *best* neuron
+    to every relative detector (highest PNR, calcium-like shape, most power
+    in the biological band), so none of them can catch it at any threshold.
+    A peak ΔF/F of, say, 80 is not biologically plausible for a GECI and is
+    almost always a poorly-separated source sitting on a high-contrast edge.
+
+    The per-neuron peak is ``max(trace) - baseline(trace)`` where
+    ``baseline`` is the trace median (default) or zero. A neuron is flagged
+    when this peak is strictly greater than ``max_dff``.
+
+    This is a neuron-level reject (it removes the whole component, like the
+    other QC detectors), which is distinct from the event-level
+    ``max_event_amplitude`` filter in :func:`run_all` — the latter only
+    prunes individual events from the per-event metric tables and never
+    removes the trace from population means / per-neuron plots.
+
+    Args:
+        dff_dat: Full ΔF/F₀ matrix, shape ``(n_components, n_frames)``.
+        filtered_idx: Indices into ``dff_dat`` rows that passed spatial
+            filtering. The detector operates on ``dff_dat[filtered_idx]``.
+        max_dff: Absolute ΔF/F ceiling. Neurons whose peak exceeds this are
+            flagged. ``None`` or a non-positive value disables the detector
+            (nothing flagged).
+        baseline: ``"median"`` (default) subtracts the per-trace median
+            before measuring the peak; ``"zero"`` uses the raw maximum.
+
+    Returns:
+        Dict with the standard QC schema used by the other detectors:
+            ``flagged_mask``, ``flagged_idx``, ``clean_idx``, ``n_flagged``,
+            ``pct_flagged``, ``neuron_scores`` (columns ``component_idx``,
+            ``peak_dff``, ``is_high_amplitude``, ``reason``),
+            ``threshold`` (echo of ``max_dff``), ``summary``.
+    """
+    filtered_idx = np.asarray(filtered_idx)
+    traces = dff_dat[filtered_idx, :]
+    n_neurons = traces.shape[0]
+
+    disabled = max_dff is None or not np.isfinite(max_dff) or max_dff <= 0
+
+    if n_neurons == 0 or disabled:
+        peak = np.zeros(n_neurons, dtype=float)
+        if n_neurons and not disabled:
+            peak = _peak_dff(traces, baseline)
+        scores = pd.DataFrame({
+            "component_idx": filtered_idx,
+            "peak_dff": peak,
+            "is_high_amplitude": np.zeros(n_neurons, dtype=bool),
+            "reason": ["ok"] * n_neurons,
+        })
+        return {
+            "flagged_mask": np.zeros(n_neurons, dtype=bool),
+            "flagged_idx": np.array([], dtype=int),
+            "clean_idx": filtered_idx,
+            "n_flagged": 0,
+            "pct_flagged": 0.0,
+            "neuron_scores": scores,
+            "threshold": max_dff,
+            "summary": (
+                "High-amplitude outlier detection disabled (max_dff "
+                f"={max_dff})."
+                if disabled
+                else "No neurons for high-amplitude outlier detection."
+            ),
+        }
+
+    peak = _peak_dff(traces, baseline)
+    flagged = peak > float(max_dff)
+
+    reasons = np.array(["ok"] * n_neurons, dtype=object)
+    reasons[flagged] = "high_amplitude"
+
+    scores = pd.DataFrame({
+        "component_idx": filtered_idx,
+        "peak_dff": peak,
+        "is_high_amplitude": flagged,
+        "reason": reasons,
+    })
+
+    n_flagged = int(flagged.sum())
+    pct_flagged = (n_flagged / n_neurons * 100) if n_neurons else 0.0
+    summary = (
+        f"High-amplitude outlier detection (max_dff={max_dff}, "
+        f"baseline={baseline}): flagged {n_flagged}/{n_neurons} neurons "
+        f"({pct_flagged:.1f}%)."
+    )
+
+    return {
+        "flagged_mask": flagged,
+        "flagged_idx": filtered_idx[flagged],
+        "clean_idx": filtered_idx[~flagged],
+        "n_flagged": n_flagged,
+        "pct_flagged": pct_flagged,
+        "neuron_scores": scores,
+        "threshold": max_dff,
+        "summary": summary,
+    }
+
+
+def _peak_dff(traces: np.ndarray, baseline: str) -> np.ndarray:
+    """Per-trace peak ΔF/F with the requested baseline subtracted."""
+    arr = np.asarray(traces, dtype=float)
+    peak = np.nanmax(arr, axis=1)
+    if baseline == "zero":
+        return peak
+    if baseline == "median":
+        return peak - np.nanmedian(arr, axis=1)
+    raise ValueError(
+        f"Unknown baseline {baseline!r}; expected 'median' or 'zero'."
+    )
+
+
 def combine_neuron_qc(
     filtered_idx: np.ndarray,
     low_pnr_result: Optional[Dict] = None,
@@ -771,6 +894,7 @@ def combine_neuron_qc(
     spectral_result: Optional[Dict] = None,
     min_flags: int = 1,
     amplitude_result: Optional[Dict] = None,
+    high_amplitude_result: Optional[Dict] = None,
 ) -> Dict:
     """Merge results from multiple outlier detectors into a unified QC report.
 
@@ -779,6 +903,8 @@ def combine_neuron_qc(
         low_pnr_result: Return value of :func:`detect_low_pnr_neurons`.
         waveform_result: Return value of :func:`detect_waveform_outliers`.
         spectral_result: Return value of :func:`detect_spectral_outliers`.
+        high_amplitude_result: Return value of
+            :func:`detect_high_amplitude_neurons`.
         min_flags: A neuron is marked ``any_outlier=True`` when it is
             flagged by at least this many detectors (default 1 = union).
         amplitude_result: Deprecated alias for ``low_pnr_result``. Accepted
@@ -846,6 +972,13 @@ def combine_neuron_qc(
                 combined[col] = sp[col].values
         flag_arrays.append(spectral_result["flagged_mask"].astype(int))
 
+    if high_amplitude_result and not high_amplitude_result["neuron_scores"].empty:
+        ha = high_amplitude_result["neuron_scores"]
+        for col in ["peak_dff", "is_high_amplitude"]:
+            if col in ha.columns:
+                combined[col] = ha[col].values
+        flag_arrays.append(high_amplitude_result["flagged_mask"].astype(int))
+
     if flag_arrays:
         n_flags = np.sum(flag_arrays, axis=0)
     else:
@@ -860,6 +993,7 @@ def combine_neuron_qc(
         low_pnr_result is not None,
         waveform_result is not None,
         spectral_result is not None,
+        high_amplitude_result is not None,
     ])
     summary = (
         f"Combined QC ({methods_used} detectors, min_flags={min_flags}): "

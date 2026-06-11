@@ -549,3 +549,119 @@ def test_template_mismatch_predictable_degradation(outliers):
         f"event than the GCaMP6s template does "
         f"(matched r={r_match_6f:.3f}, mismatched r={r_mismatch_6f:.3f})."
     )
+
+
+# ---------------------------------------------------------------------------
+# Absolute-amplitude detector (``detect_high_amplitude_neurons``).
+# ---------------------------------------------------------------------------
+def _make_amplitude_population(rng, n_neurons=20, n_frames=1000,
+                               artifact_amp=80.0):
+    """A silent-well-like population: many small traces + one huge artifact.
+
+    Index 0 carries a single enormous transient (the motion/edge artifact);
+    everyone else is a normal small-amplitude / noise trace. This mirrors
+    the real B07 well where the relative detectors all fail.
+    """
+    dff = np.stack([
+        _make_clean_neuron(rng, n_frames=n_frames, amplitude=0.3,
+                           noise_sigma=0.05)
+        for _ in range(n_neurons)
+    ])
+    dff[0] = _gauss_event(n_frames, n_frames // 2, artifact_amp) + \
+        rng.normal(0.0, 0.05, size=n_frames)
+    return dff
+
+
+def test_high_amplitude_flags_artifact(outliers):
+    """A trace peaking far above the ceiling is flagged; others are not."""
+    rng = np.random.default_rng(11)
+    dff = _make_amplitude_population(rng, artifact_amp=80.0)
+    filtered_idx = np.arange(dff.shape[0])
+
+    res = outliers.detect_high_amplitude_neurons(dff, filtered_idx, max_dff=20.0)
+    assert res["n_flagged"] == 1
+    assert res["flagged_idx"].tolist() == [0]
+    scores = res["neuron_scores"]
+    assert scores.loc[scores.component_idx == 0, "peak_dff"].iloc[0] > 70
+    assert bool(scores.loc[scores.component_idx == 0, "is_high_amplitude"].iloc[0])
+    # Everyone else stays clean.
+    assert not scores.loc[scores.component_idx != 0, "is_high_amplitude"].any()
+
+
+def test_high_amplitude_is_absolute_not_relative(outliers):
+    """The detector uses a fixed ceiling, not a population z-score.
+
+    This is the whole point: in a silent well the artifact is the *only*
+    responsive trace, so any relative (modified-z) detector either can't
+    score it or treats it as the best neuron. The ceiling must flag it
+    regardless of how the rest of the population looks.
+    """
+    rng = np.random.default_rng(12)
+    dff = _make_amplitude_population(rng, n_neurons=20, artifact_amp=80.0)
+    filtered_idx = np.arange(dff.shape[0])
+
+    # The relative low_pnr detector must NOT flag the huge-amplitude trace
+    # (it lives in the high tail), confirming a relative test is the wrong
+    # tool here.
+    low = outliers.detect_low_pnr_neurons(dff, filtered_idx, threshold=2.0)
+    assert 0 not in set(low["flagged_idx"].tolist())
+
+    # The absolute detector flags it even at a generous ceiling.
+    res = outliers.detect_high_amplitude_neurons(dff, filtered_idx, max_dff=50.0)
+    assert res["flagged_idx"].tolist() == [0]
+
+
+def test_high_amplitude_disabled(outliers):
+    """``max_dff`` of 0 / None / negative disables the detector."""
+    rng = np.random.default_rng(13)
+    dff = _make_amplitude_population(rng)
+    filtered_idx = np.arange(dff.shape[0])
+    for ceil in (0.0, None, -1.0):
+        res = outliers.detect_high_amplitude_neurons(
+            dff, filtered_idx, max_dff=ceil
+        )
+        assert res["n_flagged"] == 0
+        assert res["flagged_idx"].tolist() == []
+
+
+def test_high_amplitude_baseline_modes(outliers):
+    """``baseline='zero'`` measures the raw max; 'median' subtracts median."""
+    n_frames = 500
+    trace = np.full(n_frames, 5.0)  # constant offset of 5
+    trace[250] = 25.0               # peak at 25 (raw), 20 above the median
+    dff = np.stack([trace, np.zeros(n_frames)])
+    filtered_idx = np.arange(2)
+
+    # median baseline: peak above median is 20 -> not > 20 (strictly).
+    res_med = outliers.detect_high_amplitude_neurons(
+        dff, filtered_idx, max_dff=20.0, baseline="median"
+    )
+    assert res_med["neuron_scores"].loc[0, "peak_dff"] == pytest.approx(20.0)
+    assert res_med["n_flagged"] == 0
+
+    # zero baseline: raw max is 25 -> flagged.
+    res_zero = outliers.detect_high_amplitude_neurons(
+        dff, filtered_idx, max_dff=20.0, baseline="zero"
+    )
+    assert res_zero["neuron_scores"].loc[0, "peak_dff"] == pytest.approx(25.0)
+    assert res_zero["flagged_idx"].tolist() == [0]
+
+
+def test_high_amplitude_combines_into_qc(outliers):
+    """``combine_neuron_qc`` merges the high-amplitude flag into any_outlier."""
+    rng = np.random.default_rng(14)
+    dff = _make_amplitude_population(rng, artifact_amp=80.0)
+    filtered_idx = np.arange(dff.shape[0])
+
+    ha = outliers.detect_high_amplitude_neurons(dff, filtered_idx, max_dff=20.0)
+    combined = outliers.combine_neuron_qc(
+        filtered_idx, high_amplitude_result=ha
+    )
+    df = combined["combined_df"]
+    assert "peak_dff" in df.columns
+    assert "is_high_amplitude" in df.columns
+    row0 = df[df.component_idx == 0].iloc[0]
+    assert bool(row0["is_high_amplitude"])
+    assert bool(row0["any_outlier"])
+    # The rest are not flagged by this single detector.
+    assert int(df["any_outlier"].sum()) == 1

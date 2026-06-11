@@ -30,7 +30,8 @@ from wizards_staff.wizards.familiars import spatial_filtering
 from wizards_staff.wizards.shard import Shard
 from wizards_staff.stats.outliers import (
     detect_low_pnr_neurons, detect_waveform_outliers,
-    detect_spectral_outliers, combine_neuron_qc,
+    detect_spectral_outliers, detect_high_amplitude_neurons,
+    combine_neuron_qc,
 )
 from wizards_staff.reporting import generate_run_report
 
@@ -963,6 +964,7 @@ def run_all(orb: "Orb",
             debug: bool=False, 
             outlier_threshold: float=3.5,
             outlier_methods: tuple=("low_pnr", "waveform", "spectral"),
+            outlier_max_dff: float=20.0,
             remove_outlier: bool=False,
             show_outlier: bool=False,
             filter_events: bool=False,
@@ -1011,14 +1013,31 @@ def run_all(orb: "Orb",
             their respective sign conventions. Set to 0 to disable.
             Default 3.5.
         outlier_methods: Which outlier detectors to run. A tuple containing any
-            combination of "low_pnr", "waveform", and "spectral".
-            Default is all three. The legacy key "amplitude" is accepted
-            as a deprecated alias for "low_pnr" (emits a
-            DeprecationWarning). Examples:
+            combination of "low_pnr", "waveform", "spectral" and
+            "high_amplitude". Default is the first three. The legacy key
+            "amplitude" is accepted as a deprecated alias for "low_pnr"
+            (emits a DeprecationWarning). Examples:
             - ("low_pnr",)                — only low-PNR / dead-neuron rejection
             - ("waveform",)               — only template matching
             - ("spectral",)               — only frequency-domain analysis
             - ("low_pnr", "waveform")     — low_pnr + waveform, skip spectral
+            - ("low_pnr", "waveform", "spectral", "high_amplitude")
+                                          — also reject components whose peak
+                                            ΔF/F exceeds ``outlier_max_dff``
+                                            (catches motion / edge artifacts
+                                            that the relative detectors miss).
+        outlier_max_dff: Absolute ΔF/F ceiling for the "high_amplitude"
+            detector. Components whose peak (max minus median) ΔF/F exceeds
+            this are flagged as outliers. Only takes effect when
+            "high_amplitude" is in ``outlier_methods``. Unlike the relative
+            low_pnr / waveform / spectral detectors (which score each neuron
+            against the rest of the well and therefore cannot flag a single
+            huge artifact that looks like the "best" component), this is a
+            fixed physical threshold. It is also distinct from the
+            event-level ``max_event_amplitude`` filter: this removes the
+            whole component from plots / means / metrics, whereas
+            ``max_event_amplitude`` only prunes individual events. Default
+            ``20.0``; set to ``0`` / ``None`` to disable.
         remove_outlier: If True, exclude detected outlier neurons from downstream
             metric DataFrames (FWHM, FRPM, rise time, fall time, peak amplitude,
             peak-to-peak) and from per-shard non-QC plots. Also emits the
@@ -1307,6 +1326,7 @@ def run_all(orb: "Orb",
         output_dir=output_dir,
         outlier_threshold=outlier_threshold,
         outlier_methods=outlier_methods,
+        outlier_max_dff=outlier_max_dff,
         remove_outlier=remove_outlier,
         show_outlier=show_outlier,
         filter_events=filter_events,
@@ -1524,6 +1544,7 @@ def run_all(orb: "Orb",
         "threads": threads,
         "outlier_threshold": outlier_threshold,
         "outlier_methods": tuple(sorted(outlier_methods)) if outlier_methods else (),
+        "outlier_max_dff": outlier_max_dff,
         "remove_outlier": remove_outlier,
         "show_outlier": show_outlier,
         "filter_events": filter_events,
@@ -1608,6 +1629,7 @@ def _run_all(shard: Shard,
              output_dir: str = 'wizard_staff_outputs',
              outlier_threshold: float = 3.5,
              outlier_methods: set = None,
+             outlier_max_dff: float = 20.0,
              remove_outlier: bool = False,
              show_outlier: bool = False,
              filter_events: bool = False,
@@ -1700,14 +1722,20 @@ def _run_all(shard: Shard,
     # downstream `is_outlier` tagging defaults to False.
     outlier_components: set = set()
 
-    if outlier_threshold > 0 and outlier_methods:
+    # The relative detectors (low_pnr / waveform / spectral) are gated on
+    # ``outlier_threshold > 0``; the absolute high_amplitude detector is
+    # gated on its own ceiling instead, so allow the block to run for it
+    # even when the relative threshold is disabled.
+    _run_high_amp = "high_amplitude" in outlier_methods
+    if outlier_methods and (outlier_threshold > 0 or _run_high_amp):
         dff_raw = shard.get_input('dff_dat', req=True)
 
         low_pnr_result = None
         waveform_result = None
         spectral_result = None
+        high_amplitude_result = None
 
-        if "low_pnr" in outlier_methods:
+        if outlier_threshold > 0 and "low_pnr" in outlier_methods:
             low_pnr_result = detect_low_pnr_neurons(
                 dff_raw, filtered_idx, threshold=outlier_threshold
             )
@@ -1716,7 +1744,7 @@ def _run_all(shard: Shard,
                     f'{shard.sample_name}: {low_pnr_result["summary"]}'
                 )
 
-        if "waveform" in outlier_methods:
+        if outlier_threshold > 0 and "waveform" in outlier_methods:
             waveform_result = detect_waveform_outliers(
                 dff_raw, filtered_idx, fps=frate, threshold=outlier_threshold,
                 indicator=indicator,
@@ -1730,7 +1758,7 @@ def _run_all(shard: Shard,
                     f'{shard.sample_name}: {waveform_result["summary"]}'
                 )
 
-        if "spectral" in outlier_methods:
+        if outlier_threshold > 0 and "spectral" in outlier_methods:
             spectral_result = detect_spectral_outliers(
                 dff_raw, filtered_idx, fps=frate, threshold=outlier_threshold,
             )
@@ -1739,11 +1767,21 @@ def _run_all(shard: Shard,
                     f'{shard.sample_name}: {spectral_result["summary"]}'
                 )
 
+        if _run_high_amp:
+            high_amplitude_result = detect_high_amplitude_neurons(
+                dff_raw, filtered_idx, max_dff=outlier_max_dff,
+            )
+            if high_amplitude_result["n_flagged"] > 0:
+                shard._logger.info(
+                    f'{shard.sample_name}: {high_amplitude_result["summary"]}'
+                )
+
         qc = combine_neuron_qc(
             filtered_idx,
             low_pnr_result=low_pnr_result,
             waveform_result=waveform_result,
             spectral_result=spectral_result,
+            high_amplitude_result=high_amplitude_result,
         )
         combined_df = qc["combined_df"]
 
