@@ -5,7 +5,7 @@ import sys
 import logging
 import warnings
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 from functools import partial
 from multiprocessing import get_context
 # joblib is imported locally in run_all when threads > 1
@@ -812,6 +812,233 @@ def _invalidate_event_filter_caches(orb: "Orb") -> None:
         setattr(orb, attr, None)
 
 
+def _emit_shard_plots(
+    shard: Shard,
+    idx,
+    out_dir: str,
+    *,
+    frate: int,
+    min_clusters: int,
+    max_clusters: int,
+    random_seed: int,
+    show_plots: bool,
+    save_files: bool,
+) -> Tuple[Optional[float], Optional[int]]:
+    """Emit the cross-neuron / clustering plots for one ``shard`` to ``out_dir``.
+
+    Covers ``dff_activity_plots``, ``kmeans_heatmap_plots`` /
+    ``kmeans_heatmap_csv``, ``cluster_activity_plots`` and
+    ``cluster_activity_maps``. ``idx`` selects which components are plotted —
+    the cleaned ``plot_idx`` for the main pass, the full ``filtered_idx`` for
+    the ``with_outliers`` mirror tree and for the pre-filter baseline.
+
+    Returns the ``(silhouette_score, num_clusters)`` pair from the k-means
+    heatmap, or ``(None, None)`` when ``idx`` is empty or the heatmap plot
+    fails. Each plot is wrapped so one failure (e.g. clustering on too-few
+    neurons) doesn't abort the rest of the set.
+    """
+    def _safe_plot(name, fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            shard._logger.warning(
+                f'{shard.sample_name}: {name} failed: {e}'
+            )
+            return None
+
+    if len(idx) == 0:
+        shard._logger.warning(
+            f'{shard.sample_name}: empty index for cross-neuron plots '
+            f'(out_dir={out_dir}); skipping per-shard plotting.'
+        )
+        return None, None
+
+    _safe_plot(
+        'plot_dff_activity', plot_dff_activity,
+        shard.get_input('dff_dat', req=True),
+        idx, frate, shard.sample_name,
+        sz_per_neuron=0.5,
+        show_plots=show_plots,
+        save_files=save_files,
+        output_dir=out_dir,
+    )
+
+    kmeans_res = _safe_plot(
+        'plot_kmeans_heatmap', plot_kmeans_heatmap,
+        dff_dat=shard.get_input('dff_dat', req=True),
+        filtered_idx=idx,
+        sample_name=shard.sample_name,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters,
+        random_seed=random_seed,
+        show_plots=show_plots,
+        save_files=save_files,
+        output_dir=out_dir,
+    )
+    sscore, nclust = kmeans_res if kmeans_res is not None else (None, None)
+
+    _safe_plot(
+        'plot_cluster_activity', plot_cluster_activity,
+        dff_dat=shard.get_input('dff_dat', req=True),
+        filtered_idx=idx,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters,
+        random_seed=random_seed,
+        norm=False,
+        show_plots=show_plots,
+        save_files=save_files,
+        sample_name=shard.sample_name,
+        output_dir=out_dir,
+    )
+
+    _safe_plot(
+        'plot_spatial_activity_map', plot_spatial_activity_map,
+        shard.get_input('minprojection', req=True),
+        shard.get_input('cnm_A', req=True),
+        idx,
+        shard.sample_name,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters,
+        random_seed=random_seed,
+        show_plots=show_plots,
+        save_files=save_files,
+        dff_dat=shard.get_input('dff_dat'),
+        output_dir=out_dir,
+    )
+
+    _safe_plot(
+        'plot_spatial_activity_map (clustering)', plot_spatial_activity_map,
+        shard.get_input('minprojection', req=True),
+        shard.get_input('cnm_A', req=True),
+        idx,
+        shard.sample_name,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters,
+        random_seed=random_seed,
+        clustering=True,
+        dff_dat=shard.get_input('dff_dat', req=True),
+        show_plots=show_plots,
+        save_files=save_files,
+        output_dir=out_dir,
+    )
+
+    return sscore, nclust
+
+
+def _emit_baseline_plots(
+    orb: "Orb",
+    *,
+    baseline_output_dir: str,
+    frate: Optional[int],
+    p_th: float,
+    size_threshold: int,
+    zscore_threshold: float,
+    percentage_threshold: float,
+    min_clusters: int,
+    max_clusters: int,
+    random_seed: int,
+    show_plots: bool,
+) -> None:
+    """Emit the same plot set the main pass writes to ``output_dir`` into the
+    pre-filtration ``baseline_output_dir``, using the *un-cleaned* neuron set
+    (no outlier removal) and the *unfiltered* event lists.
+
+    MUST be called while ``orb`` is in its baseline view — i.e. from inside
+    ``_save_pre_filter_baseline`` after ``orb._remove_outlier`` has been
+    flipped off and every shard re-filtered with ``filter_events=False`` —
+    so the event-bar plots read the unfiltered ``orb.fwhm_data`` and every
+    neuron is included.
+
+    Covers the per-shard cross-neuron / clustering plots
+    (``dff_activity_plots``, ``kmeans_heatmap_plots`` / ``kmeans_heatmap_csv``,
+    ``cluster_activity_plots``, ``cluster_activity_maps``) and the
+    population-mean / per-neuron event-bar plots (``dff_traces_with_events``).
+    Outlier QC plots (``outlier_plots``) and PWC plots are NOT re-emitted —
+    they are filter-independent and already written once to the main output
+    folder. ``save_files`` is implicitly True (the baseline is a disk-only
+    artifact); ``show_plots`` is honored so notebook users can preview the
+    baseline figures inline.
+    """
+    print(
+        f'save_baseline: regenerating plots for the pre-filtration baseline '
+        f'in {baseline_output_dir}...',
+        flush=True,
+    )
+
+    # ── Per-shard cross-neuron / clustering plots ────────────────────
+    # Re-uses the spatial-filter index cached on each shard during the main
+    # pass (``_filtered_idx_cache``) so we plot every spatially-filtered
+    # neuron, including the ones the main pass dropped as outliers.
+    for shard in orb._shards.values():
+        idx = list(getattr(shard, '_filtered_idx_cache', []) or [])
+        if not idx:
+            # Shard never produced a filtered index (missing inputs / skipped).
+            continue
+        # Resolve the per-shard frame rate exactly like _run_all does.
+        sh_frate = frate
+        if sh_frate is None:
+            try:
+                sh_frate = int(shard.metadata['Frate'].iloc[0])
+            except Exception:
+                sh_frate = getattr(shard, '_recording_frate', 0) or 0
+        try:
+            _emit_shard_plots(
+                shard, idx, baseline_output_dir,
+                frate=sh_frate,
+                min_clusters=min_clusters,
+                max_clusters=max_clusters,
+                random_seed=random_seed,
+                show_plots=show_plots,
+                save_files=True,
+            )
+        except Exception as e:
+            orb._logger.warning(
+                f'baseline per-shard plots failed for {shard.sample_name}: {e}'
+            )
+
+    # ── Population-mean and per-neuron event-bar plots ───────────────
+    # exclude_outlier_neurons=False — the baseline keeps every neuron, so the
+    # event bars / mean traces reflect the full, un-cleaned population.
+    print('Plotting baseline population-mean ΔF/F traces with event bars...', flush=True)
+    for sh in list(orb.shards):
+        try:
+            plot_sample_mean_dff_with_events(
+                orb,
+                sample_name=sh.sample_name,
+                exclude_outlier_neurons=False,
+                p_th=p_th,
+                size_threshold=size_threshold,
+                zscore_threshold=zscore_threshold,
+                percentage_threshold=percentage_threshold,
+                show_plots=show_plots,
+                save_files=True,
+                output_dir=baseline_output_dir,
+            )
+        except Exception as e:
+            print(
+                f'WARNING: baseline plot_sample_mean_dff_with_events failed '
+                f'for {sh.sample_name}: {e}',
+                file=sys.stderr, flush=True,
+            )
+
+    print('Plotting baseline per-neuron ΔF/F traces with event bars...', flush=True)
+    try:
+        plot_neuron_dff_traces_with_events(
+            orb,
+            exclude_outlier_neurons=False,
+            p_th=p_th,
+            size_threshold=size_threshold,
+            show_plots=show_plots,
+            save_files=True,
+            output_dir=baseline_output_dir,
+        )
+    except Exception as e:
+        print(
+            f'WARNING: baseline plot_neuron_dff_traces_with_events failed: {e}',
+            file=sys.stderr, flush=True,
+        )
+
+
 def _save_pre_filter_baseline(
     orb: "Orb",
     *,
@@ -825,6 +1052,16 @@ def _save_pre_filter_baseline(
     on_disagreement: str,
     generate_report: bool,
     report_params: dict,
+    generate_plots: bool = False,
+    frate: Optional[int] = None,
+    p_th: float = 75,
+    size_threshold: int = 20000,
+    zscore_threshold: float = 3.5,
+    percentage_threshold: float = 0.2,
+    min_clusters: int = 2,
+    max_clusters: int = 10,
+    random_seed: int = 1111111,
+    show_plots: bool = False,
 ) -> None:
     """Save a pre-filtration baseline of every metric CSV to
     ``baseline_output_dir``, then restore the post-filter view on ``orb``.
@@ -861,6 +1098,19 @@ def _save_pre_filter_baseline(
             the post-filter ``generate_run_report`` call. Cloned and
             mutated (``remove_outlier=False``, ``filter_events=False``,
             etc.) for the baseline report.
+        generate_plots: When True, also regenerate the full plot set
+            (``dff_activity_plots``, ``kmeans_heatmap_*``,
+            ``cluster_activity_*`` and ``dff_traces_with_events``) into
+            ``baseline_output_dir`` from the un-cleaned, unfiltered view —
+            see :func:`_emit_baseline_plots`. Unlike the CSV dump this is
+            NOT free (it re-renders every figure), so it is opt-in.
+        frate / p_th / size_threshold / zscore_threshold /
+            percentage_threshold / min_clusters / max_clusters /
+            random_seed / show_plots: Plot parameters forwarded to
+            :func:`_emit_baseline_plots`; only consulted when
+            ``generate_plots=True``. Mirror the values used by the
+            originating ``run_all`` call so the baseline figures match the
+            post-filter figures apart from the cleaning step.
     """
     orig_remove_outlier = orb._remove_outlier
     orig_show_outlier = orb._show_outlier
@@ -919,6 +1169,24 @@ def _save_pre_filter_baseline(
             )
 
     try:
+        # Baseline plots — emitted while the orb is still in its baseline
+        # view so the event-bar plots read unfiltered fwhm_data and every
+        # neuron is included. Kept inside the try so the finally block below
+        # always restores the post-filter view, even if plotting raises.
+        if generate_plots:
+            _emit_baseline_plots(
+                orb,
+                baseline_output_dir=baseline_output_dir,
+                frate=frate,
+                p_th=p_th,
+                size_threshold=size_threshold,
+                zscore_threshold=zscore_threshold,
+                percentage_threshold=percentage_threshold,
+                min_clusters=min_clusters,
+                max_clusters=max_clusters,
+                random_seed=random_seed,
+                show_plots=show_plots,
+            )
         orb.save_results(baseline_output_dir)
         print(f'Baseline saved to {baseline_output_dir}.', flush=True)
     finally:
@@ -980,8 +1248,10 @@ def run_all(orb: "Orb",
             labels_corpus: Optional[Union[str, Path]]=None,
             on_disagreement: str="drop",
             generate_report: bool=True,
+            report_group_by: Optional[Union[str, List[str]]]=None,
             save_baseline: bool=False,
             baseline_output_dir: Optional[str]=None,
+            baseline_plots: bool=True,
             **kwargs
             ) -> None:
     """
@@ -1130,6 +1400,22 @@ def run_all(orb: "Orb",
             histograms for each metric are saved under
             ``output_dir/run_report/``. Set to False to silence for batch or
             CI runs.
+        report_group_by: Controls how the run report's per-metric
+            distributions are split. ``None`` (default) pools every event
+            into one distribution / histogram per metric (legacy behavior).
+            Pass a column name present in the metric tables to break each
+            metric down by that column — e.g. ``"Well"`` (per-well),
+            ``"Astrocyte Type"`` / your ``group_name`` column (per-condition),
+            or any metadata column. The "Distribution summaries" section then
+            emits one stats row per group and the saved histograms overlay one
+            curve per group (with a legend). Pass a list of column names
+            (e.g. ``["Sample", "Neuron"]``) to group by a composite key for a
+            per-neuron breakdown. Note this is purely a *reporting* knob —
+            independent of ``group_name`` (which drives PWC) — though you can
+            point them at the same column. When ``save_baseline=True`` the
+            baseline report inherits the same grouping. Groups beyond a small
+            cap fall back to a single pooled histogram (annotated with the
+            group count) to keep the figure legible.
         save_baseline: If True (and ``save_files=True``), additionally write
             a *pre-filtration* baseline of every metric CSV — derived from
             the raw per-shard event lists with ``remove_outlier=False``
@@ -1139,9 +1425,10 @@ def run_all(orb: "Orb",
             (no spike redetection, no outlier redetection, no PWC redo,
             no parallel worker pool). Lets you compare cleaned vs.
             un-cleaned results on disk without paying for a second full
-            ``run_all`` invocation. Plots are NOT regenerated for the
-            baseline — only CSVs and (when ``generate_report=True``) the
-            markdown run report. ``labels_corpus`` is also bypassed for
+            ``run_all`` invocation. By default the full plot set is also
+            regenerated for the baseline (see ``baseline_plots``); CSVs and
+            (when ``generate_report=True``) the markdown run report are
+            always written. ``labels_corpus`` is also bypassed for
             the baseline so the comparison reference is truly un-cleaned.
             After the baseline save completes, the post-filter view is
             restored on ``orb`` so downstream consumers (e.g. Section 5.1
@@ -1153,6 +1440,20 @@ def run_all(orb: "Orb",
             so the baseline lives alongside the cleaned results. Pass an
             absolute path (e.g. ``OUTPUT_FOLDER_PRE_FILTER``) to land it
             in a sibling folder instead. Ignored when ``save_baseline=False``.
+        baseline_plots: When True (default) and ``save_baseline=True``, also
+            regenerate the full plot set for the pre-filtration baseline
+            into ``baseline_output_dir`` — the per-shard cross-neuron /
+            clustering plots (``dff_activity_plots``, ``kmeans_heatmap_*``,
+            ``cluster_activity_*``) AND the population-mean / per-neuron
+            event-bar plots (``dff_traces_with_events``), all drawn from the
+            un-cleaned (no outlier removal) and unfiltered (every event)
+            view so they mirror the post-filter folder. Unlike the baseline
+            CSV dump (which is essentially free), this re-renders every
+            figure, so set it to False if you only need the baseline CSVs
+            and want to keep the baseline pass cheap. Outlier QC plots and
+            PWC plots are not duplicated into the baseline folder — they are
+            filter-independent and already written to ``output_dir``.
+            Ignored when ``save_baseline=False``.
         kwargs: Additional keyword arguments that will be passed to run_pwc
     """
     # Check if the output directory exists
@@ -1554,6 +1855,7 @@ def run_all(orb: "Orb",
         "max_event_fwhm": max_event_fwhm,
         "labels_corpus": str(labels_corpus) if labels_corpus is not None else None,
         "on_disagreement": on_disagreement,
+        "report_group_by": report_group_by,
     }
     if generate_report:
         try:
@@ -1594,6 +1896,16 @@ def run_all(orb: "Orb",
             on_disagreement=on_disagreement,
             generate_report=generate_report,
             report_params=report_params,
+            generate_plots=baseline_plots,
+            frate=frate,
+            p_th=p_th,
+            size_threshold=size_threshold,
+            zscore_threshold=zscore_threshold,
+            percentage_threshold=percentage_threshold,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
+            random_seed=random_seed,
+            show_plots=show_plots,
         )
 
 def _run_all_safe(shard: Shard, func) -> Shard:
@@ -2051,103 +2363,34 @@ def _run_all(shard: Shard,
     # ``remove_outlier=True``). When ``show_outlier=True`` we additionally emit
     # a "with outliers" copy under ``output_dir/with_outliers/``.
     #
-    # Each call is wrapped so one failed plot (e.g. clustering on too-few neurons)
+    # ``_emit_shard_plots`` is a module-level helper (also reused by the
+    # pre-filter baseline pass in ``_save_pre_filter_baseline``); each plot
+    # inside it is wrapped so one failure (e.g. clustering on too-few neurons)
     # doesn't abort the whole shard's processing.
-    def _safe_plot(name, fn, *args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            shard._logger.warning(
-                f'{shard.sample_name}: {name} failed: {e}'
-            )
-            return None
-
-    def _emit_shard_plots(idx, out_dir):
-        if len(idx) == 0:
-            shard._logger.warning(
-                f'{shard.sample_name}: empty index for cross-neuron plots '
-                f'(out_dir={out_dir}); skipping per-shard plotting.'
-            )
-            return None, None
-
-        _safe_plot(
-            'plot_dff_activity', plot_dff_activity,
-            shard.get_input('dff_dat', req=True),
-            idx, frate, shard.sample_name,
-            sz_per_neuron=0.5,
-            show_plots=show_plots,
-            save_files=save_files,
-            output_dir=out_dir,
-        )
-
-        kmeans_res = _safe_plot(
-            'plot_kmeans_heatmap', plot_kmeans_heatmap,
-            dff_dat=shard.get_input('dff_dat', req=True),
-            filtered_idx=idx,
-            sample_name=shard.sample_name,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters,
-            random_seed=random_seed,
-            show_plots=show_plots,
-            save_files=save_files,
-            output_dir=out_dir,
-        )
-        sscore, nclust = kmeans_res if kmeans_res is not None else (None, None)
-
-        _safe_plot(
-            'plot_cluster_activity', plot_cluster_activity,
-            dff_dat=shard.get_input('dff_dat', req=True),
-            filtered_idx=idx,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters,
-            random_seed=random_seed,
-            norm=False,
-            show_plots=show_plots,
-            save_files=save_files,
-            sample_name=shard.sample_name,
-            output_dir=out_dir,
-        )
-
-        _safe_plot(
-            'plot_spatial_activity_map', plot_spatial_activity_map,
-            shard.get_input('minprojection', req=True),
-            shard.get_input('cnm_A', req=True),
-            idx,
-            shard.sample_name,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters,
-            random_seed=random_seed,
-            show_plots=show_plots,
-            save_files=save_files,
-            dff_dat=shard.get_input('dff_dat'),
-            output_dir=out_dir,
-        )
-
-        _safe_plot(
-            'plot_spatial_activity_map (clustering)', plot_spatial_activity_map,
-            shard.get_input('minprojection', req=True),
-            shard.get_input('cnm_A', req=True),
-            idx,
-            shard.sample_name,
-            min_clusters=min_clusters,
-            max_clusters=max_clusters,
-            random_seed=random_seed,
-            clustering=True,
-            dff_dat=shard.get_input('dff_dat', req=True),
-            show_plots=show_plots,
-            save_files=save_files,
-            output_dir=out_dir,
-        )
-
-        return sscore, nclust
 
     # Primary (cleaned when remove_outlier=True, otherwise full) plots.
     # Silhouette score is recorded from this primary pass only.
-    silhouette_score, num_clusters = _emit_shard_plots(plot_idx, output_dir)
+    silhouette_score, num_clusters = _emit_shard_plots(
+        shard, plot_idx, output_dir,
+        frate=frate,
+        min_clusters=min_clusters,
+        max_clusters=max_clusters,
+        random_seed=random_seed,
+        show_plots=show_plots,
+        save_files=save_files,
+    )
 
     # Optional "with outliers" mirror tree.
     if show_outlier:
-        _emit_shard_plots(filtered_idx, os.path.join(output_dir, "with_outliers"))
+        _emit_shard_plots(
+            shard, filtered_idx, os.path.join(output_dir, "with_outliers"),
+            frate=frate,
+            min_clusters=min_clusters,
+            max_clusters=max_clusters,
+            random_seed=random_seed,
+            show_plots=show_plots,
+            save_files=save_files,
+        )
 
     # Append silhouette score to the list (may be None if k-means plot failed
     # or was skipped due to an empty plot_idx — record it anyway for traceability).

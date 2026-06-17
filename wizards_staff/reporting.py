@@ -17,10 +17,15 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
+
+# Above this many distinct groups an overlaid histogram becomes an
+# illegible hairball, so ``_grouped_histogram`` falls back to a single
+# pooled histogram annotated with the group count instead.
+_MAX_OVERLAY_GROUPS = 12
 
 
 # Metrics tracked by the report, in the order they should appear.
@@ -69,6 +74,77 @@ def _describe_block(values: pd.Series, units: str) -> str:
         else:
             lines.append(f"  {label}: {v:.4f} {units}")
     return "```\n" + "\n".join(lines) + "\n```"
+
+
+def _resolve_group_by(
+    group_by: Optional[Union[str, Sequence[str]]]
+) -> Optional[List[str]]:
+    """Normalise the ``report_group_by`` argument to a list of column names.
+
+    Accepts ``None`` (no grouping), a single column name, or a sequence of
+    column names (composite key, e.g. ``["Sample", "Neuron"]`` for a
+    per-neuron breakdown). Empty / whitespace-only entries are dropped;
+    returns ``None`` when nothing usable remains.
+    """
+    if group_by is None:
+        return None
+    if isinstance(group_by, str):
+        cols = [group_by]
+    else:
+        cols = [str(c) for c in group_by]
+    cols = [c.strip() for c in cols if c is not None and str(c).strip()]
+    return cols or None
+
+
+def _group_label_series(df: pd.DataFrame, group_cols: Sequence[str]) -> pd.Series:
+    """Collapse one-or-more grouping columns into a single string label.
+
+    Single column → that column as string. Multiple columns → values joined
+    with `` / `` (pipe-free so the markdown tables stay intact).
+    """
+    if len(group_cols) == 1:
+        return df[group_cols[0]].astype(str)
+    return df[list(group_cols)].astype(str).agg(" / ".join, axis=1)
+
+
+def _grouped_describe_table(
+    df: pd.DataFrame, group_cols: Sequence[str], value_col: str, units: str
+) -> str:
+    """Return a markdown table of per-group summary stats for ``value_col``.
+
+    One row per group (sorted by group label), with count / mean / std /
+    median / min / max. Used by the distribution section when
+    ``report_group_by`` is set.
+    """
+    sub = df[[*group_cols, value_col]].copy()
+    sub[value_col] = pd.to_numeric(sub[value_col], errors="coerce")
+    sub = sub.dropna(subset=[value_col])
+    if sub.empty:
+        return "  _(no data)_"
+    sub["__grp__"] = _group_label_series(sub, group_cols)
+    stats = (
+        sub.groupby("__grp__")[value_col]
+        .agg(["count", "mean", "std", "median", "min", "max"])
+        .sort_index()
+    )
+    label = " / ".join(group_cols)
+    header = (
+        f"| {label} | n | mean | std | median | min | max |\n"
+        "|---|---:|---:|---:|---:|---:|---:|"
+    )
+
+    def _fmt(v: float) -> str:
+        if v is None or (isinstance(v, float) and not np.isfinite(v)):
+            return "n/a"
+        return f"{v:.4f}"
+
+    body_lines = [
+        f"| {gname} | {int(row['count']):,} | {_fmt(row['mean'])} | "
+        f"{_fmt(row['std'])} | {_fmt(row['median'])} | {_fmt(row['min'])} | "
+        f"{_fmt(row['max'])} |"
+        for gname, row in stats.iterrows()
+    ]
+    return header + "\n" + "\n".join(body_lines) + f"\n\n  _(values in {units})_"
 
 
 def _sample_summary_table(orb: Any) -> str:
@@ -169,6 +245,7 @@ def _params_block(params: Dict[str, Any]) -> str:
         "filter_events",
         "min_event_amplitude", "max_event_amplitude",
         "min_event_fwhm", "max_event_fwhm",
+        "report_group_by",
     ]
     lines = [
         f"- `{k}` = `{params[k]!r}`"
@@ -257,7 +334,10 @@ def _drop_reasons_block(orb: Any, output_dir: str, save_files: bool) -> str:
     return body + ledger_note
 
 
-def _distribution_section(orb: Any) -> str:
+def _distribution_section(
+    orb: Any, group_by: Optional[Union[str, Sequence[str]]] = None
+) -> str:
+    group_cols = _resolve_group_by(group_by)
     blocks = []
     for title, attr, col, units in _METRIC_SPEC:
         df = getattr(orb, attr, None)
@@ -269,13 +349,97 @@ def _distribution_section(orb: Any) -> str:
                 f"### {title}\n  _(no data — column `{col}` not present in `orb.{attr}`)_"
             )
             continue
-        values = _safe_numeric(df[col])
-        blocks.append(f"### {title}\n{_describe_block(values, units)}")
+        if group_cols:
+            missing = [c for c in group_cols if c not in df.columns]
+            if missing:
+                # Grouping column absent from this metric's table (e.g. a
+                # metadata column that didn't merge) — fall back to a pooled
+                # block with a note rather than dropping the metric.
+                values = _safe_numeric(df[col])
+                note = (
+                    f"  _(cannot group by `{', '.join(missing)}` — column(s) "
+                    f"not present in `orb.{attr}`; showing pooled)_"
+                )
+                blocks.append(
+                    f"### {title}\n{note}\n{_describe_block(values, units)}"
+                )
+            else:
+                tbl = _grouped_describe_table(df, group_cols, col, units)
+                blocks.append(
+                    f"### {title} — grouped by {', '.join(group_cols)}\n{tbl}"
+                )
+        else:
+            values = _safe_numeric(df[col])
+            blocks.append(f"### {title}\n{_describe_block(values, units)}")
     return "\n\n".join(blocks)
 
 
-def _save_histograms(orb: Any, out_dir: str) -> Sequence[str]:
-    """Save one histogram PNG per available metric. Returns list of written paths."""
+def _grouped_histogram(
+    plt: Any,
+    df: pd.DataFrame,
+    group_cols: Sequence[str],
+    value_col: str,
+    title: str,
+    units: str,
+    out_dir: str,
+) -> Optional[str]:
+    """Save one figure overlaying a step-histogram per group; return its path.
+
+    Groups are coloured from a categorical colormap and given a legend.
+    When the number of distinct groups exceeds ``_MAX_OVERLAY_GROUPS`` the
+    overlay would be illegible, so a single pooled histogram is saved with
+    the group count noted in the title instead.
+    """
+    sub = df[[*group_cols, value_col]].copy()
+    sub[value_col] = pd.to_numeric(sub[value_col], errors="coerce")
+    sub = sub.dropna(subset=[value_col])
+    if sub.empty:
+        return None
+    sub["__grp__"] = _group_label_series(sub, group_cols)
+    group_names = sorted(sub["__grp__"].unique())
+    n_groups = len(group_names)
+    label = ", ".join(group_cols)
+    safe_name = title.lower().replace(" ", "_").replace("/", "_")
+    path = os.path.join(out_dir, f"{safe_name}.png")
+
+    fig, ax = plt.subplots(figsize=(7, 4), constrained_layout=True)
+    if n_groups <= _MAX_OVERLAY_GROUPS:
+        bins = np.histogram_bin_edges(sub[value_col].to_numpy(), bins=60)
+        cmap = plt.get_cmap("tab10" if n_groups <= 10 else "tab20")
+        for i, gname in enumerate(group_names):
+            gvals = sub.loc[sub["__grp__"] == gname, value_col]
+            ax.hist(
+                gvals, bins=bins, histtype="step", linewidth=1.5,
+                color=cmap(i % cmap.N),
+                label=f"{gname} (n={len(gvals):,})",
+            )
+        ax.legend(fontsize=7, title=label, frameon=False)
+        ax.set_title(f"{title} by {label} (n={len(sub):,})")
+    else:
+        ax.hist(sub[value_col], bins=60)
+        ax.set_title(
+            f"{title} (n={len(sub):,}) — {n_groups} {label} groups "
+            f"(too many to overlay)"
+        )
+    ax.set_xlabel(units)
+    ax.set_ylabel("Count")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _save_histograms(
+    orb: Any,
+    out_dir: str,
+    group_by: Optional[Union[str, Sequence[str]]] = None,
+) -> Sequence[str]:
+    """Save one histogram PNG per available metric. Returns list of written paths.
+
+    When ``group_by`` is set (a column name or list of column names present
+    in the metric tables) each histogram overlays one step-curve per group
+    (see :func:`_grouped_histogram`); otherwise a single pooled histogram is
+    saved per metric.
+    """
     import matplotlib
     # Use a non-interactive backend here to avoid accidentally popping windows
     # during save_files=True batch runs.
@@ -288,6 +452,7 @@ def _save_histograms(orb: Any, out_dir: str) -> Sequence[str]:
         # (We still use plt locally; the restoration happens after savefig.)
         pass
 
+    group_cols = _resolve_group_by(group_by)
     os.makedirs(out_dir, exist_ok=True)
     written = []
     try:
@@ -295,6 +460,15 @@ def _save_histograms(orb: Any, out_dir: str) -> Sequence[str]:
             df = getattr(orb, attr, None)
             if df is None or col not in df.columns:
                 continue
+
+            if group_cols and all(c in df.columns for c in group_cols):
+                path = _grouped_histogram(
+                    plt, df, group_cols, col, title, units, out_dir
+                )
+                if path is not None:
+                    written.append(path)
+                continue
+
             values = _safe_numeric(df[col])
             if values.empty:
                 continue
@@ -323,6 +497,7 @@ def generate_run_report(
     output_dir: str,
     save_files: bool = False,
     report_subdir: str = "run_report",
+    report_group_by: Optional[Union[str, Sequence[str]]] = None,
 ) -> Optional[str]:
     """
     Build a markdown run-summary report, print it to stdout, and optionally
@@ -336,7 +511,11 @@ def generate_run_report(
         ``rise_time_data``, ``fall_time_data``, ``peak_to_peak_data``,
         ``frpm_data``, ``max_peak_amplitude_data``).
     params
-        Dict of the parameters used for the run. Printed verbatim.
+        Dict of the parameters used for the run. Printed verbatim. May carry a
+        ``"report_group_by"`` key, which is used as the grouping when the
+        ``report_group_by`` argument is left ``None`` (lets ``run_all`` pass
+        the setting through ``report_params`` so the baseline report inherits
+        it automatically).
     output_dir
         Base directory to write the report into when ``save_files=True``.
     save_files
@@ -344,6 +523,16 @@ def generate_run_report(
         under ``<output_dir>/<report_subdir>/``.
     report_subdir
         Subdirectory (under ``output_dir``) for saved histograms.
+    report_group_by
+        How to split the distribution summaries and histograms. ``None``
+        (default) pools every event into a single distribution per metric
+        (legacy behavior). A column name present in the metric tables — e.g.
+        ``"Well"``, the comparison column (``"Astrocyte Type"``), or any
+        metadata column — emits one describe-table row and one overlaid
+        histogram curve per distinct value. A list of column names (e.g.
+        ``["Sample", "Neuron"]`` for a per-neuron breakdown) groups by the
+        composite key. When the argument is ``None`` the value is taken from
+        ``params["report_group_by"]`` if present.
 
     Returns
     -------
@@ -351,6 +540,11 @@ def generate_run_report(
         The markdown report string (also printed to stdout). Returns ``None``
         if the orb appears to have no processed shards.
     """
+    # Fall back to the value threaded through ``params`` (how ``run_all`` and
+    # the baseline pass pass the setting) when not given explicitly.
+    if report_group_by is None:
+        report_group_by = params.get("report_group_by")
+    group_cols = _resolve_group_by(report_group_by)
     samples = [sh.sample_name for sh in orb.shards]
     if not samples:
         print("Run report skipped: no shards processed.", flush=True)
@@ -413,8 +607,14 @@ def generate_run_report(
         "`orb.<metric>_data` accessor, so they already account for "
         "`remove_outlier` / `filter_events` modes where applicable."
     )
+    if group_cols:
+        lines.append("")
+        lines.append(
+            f"_Grouped by `{', '.join(group_cols)}` "
+            f"(`report_group_by`): one row / histogram curve per group._"
+        )
     lines.append("")
-    lines.append(_distribution_section(orb))
+    lines.append(_distribution_section(orb, group_by=group_cols))
     lines.append("")
 
     report = "\n".join(lines)
@@ -435,7 +635,7 @@ def generate_run_report(
             print(f"\n[report] markdown saved to: {md_path}", flush=True)
 
             hist_dir = os.path.join(output_dir, report_subdir)
-            written = _save_histograms(orb, hist_dir)
+            written = _save_histograms(orb, hist_dir, group_by=group_cols)
             if written:
                 print(
                     f"[report] {len(written)} histogram(s) saved to: {hist_dir}",

@@ -8,6 +8,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ### Added
 
+- **`report_group_by` on `run_all` / `generate_run_report` splits the run
+  report by a chosen dimension.** Previously the run report's per-metric
+  "Distribution summaries" tables and the saved `run_report/*.png` histograms
+  always pooled every event into a single distribution, so the comparison
+  column (`group_name` / the tutorial's `COMPARE_BY`) had no effect on how
+  those figures were drawn. The new `report_group_by` parameter (default
+  `None`, i.e. the legacy pooled behavior) accepts a metadata/metric column
+  name — e.g. `"Well"` (per-well), the comparison column `"Astrocyte Type"`
+  (per-condition), or any merged metadata column — or a list of columns
+  (e.g. `["Sample", "Neuron"]` for a per-neuron composite key). When set, the
+  distribution section emits one stats row per group and each histogram
+  overlays one step-curve per group with a legend. Groups beyond a small cap
+  (`_MAX_OVERLAY_GROUPS = 12`) fall back to a single pooled histogram
+  annotated with the group count to keep the figure legible; grouping columns
+  absent from a given metric table fall back to a pooled block with a note.
+  The setting is threaded through `report_params`, so a `save_baseline=True`
+  baseline report inherits the same grouping. Purely a reporting knob —
+  independent of `group_name` (which still drives PWC). The
+  `notebooks/tutorial-notebook.ipynb` EDIT ME cell exposes it as
+  `REPORT_GROUP_BY` (defaulting to `COMPARE_BY`) and the Section 5 `run_all`
+  cell passes `report_group_by=REPORT_GROUP_BY`.
 - **`high_amplitude` neuron-level outlier detector + `outlier_max_dff`.**
   Adds `detect_high_amplitude_neurons` and wires a new
   `"high_amplitude"` key into `run_all(outlier_methods=...)`, gated by the
@@ -47,14 +68,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
   redetection, no PWC redo, no parallel worker pool. Validates that
   `save_files=True` (warns + ignores otherwise) and that
   `baseline_output_dir != output_dir` (raises `ValueError` — the exact
-  silent-overwrite footgun the feature exists to prevent). Plots are
-  emitted for the post-filter folder only; the baseline gets CSVs and
-  (when `generate_report=True`) the markdown run report describing the
-  un-cleaned dataset. The `labels_corpus` filter is also bypassed for
-  the baseline so the comparison reference is truly un-cleaned. The
+  silent-overwrite footgun the feature exists to prevent). The
+  `labels_corpus` filter is also bypassed for the baseline so the
+  comparison reference is truly un-cleaned. The
   `notebooks/tutorial-notebook.ipynb` Section 5 cell now demonstrates
   the single-call pattern (writes `OUTPUT_FOLDER_POST_FILTER` cleaned
   + `OUTPUT_FOLDER` baseline in one `run_all` invocation).
+- **`baseline_plots=True` regenerates the full plot set for the
+  pre-filtration baseline folder.** Previously the `save_baseline` pass
+  wrote CSVs + a run report only, so the baseline folder had no figures
+  to eyeball next to the post-filter ones. The baseline pass now (by
+  default) re-emits the same plots the main pass writes to `output_dir`
+  into `baseline_output_dir` — the per-shard cross-neuron / clustering
+  plots (`dff_activity_plots`, `kmeans_heatmap_plots` /
+  `kmeans_heatmap_csv`, `cluster_activity_plots`, `cluster_activity_maps`)
+  and the population-mean / per-neuron event-bar plots
+  (`dff_traces_with_events`) — drawn from the un-cleaned (no outlier
+  removal) and unfiltered (every event) view so they mirror the
+  post-filter figures apart from the cleaning step. The per-shard plotter
+  (`_emit_shard_plots`) was lifted to module scope so the baseline pass
+  and the main pass share one implementation; a new `_emit_baseline_plots`
+  helper drives the baseline figures while the orb is transiently in its
+  baseline view (so the event-bar plots read unfiltered `fwhm_data` and
+  every neuron is included). Outlier QC plots (`outlier_plots`) and PWC
+  plots are not duplicated — they are filter-independent and already
+  written to `output_dir`. Unlike the baseline CSV dump (essentially
+  free), regenerating figures has a real render cost, so pass
+  `baseline_plots=False` for CSVs + report only. No effect when
+  `save_baseline=False`.
 - **Auto-skip past already-reviewed traces in `EventLabeler`.** Previously
   the labeler would (a) open at ROI 0 regardless of which ROIs had
   already been reviewed in earlier sessions, and (b) advance to the

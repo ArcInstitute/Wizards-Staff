@@ -1958,3 +1958,86 @@ def test_save_baseline_default_baseline_dir_under_output(cauldron, tmp_path):
         "calling save_results"
     )
     assert seen_outdirs == [baseline_dir]
+
+
+def test_save_baseline_generate_plots_invokes_emit_baseline_plots(cauldron):
+    """With ``generate_plots=True`` the baseline pass must call
+    ``_emit_baseline_plots`` while still in the baseline view (so the
+    figures reflect the un-cleaned dataset) and target the baseline
+    folder."""
+    orb, shard = _make_filtered_orb(cauldron)
+    orb.save_results = lambda outdir, result_names=None: None
+
+    calls = []
+
+    def _record_plots(orb_arg, *, baseline_output_dir, **kwargs):
+        # Snapshot the orb state at plot time: must be the baseline view.
+        calls.append({
+            "baseline_output_dir": baseline_output_dir,
+            "remove_outlier": orb_arg._remove_outlier,
+            "n_events_n0": len(shard._peak_amplitude_data[0]["Peak Amplitudes"]),
+        })
+
+    orig = cauldron._emit_baseline_plots
+    cauldron._emit_baseline_plots = _record_plots
+    try:
+        cauldron._save_pre_filter_baseline(
+            orb,
+            baseline_output_dir="/tmp/wizards-staff-baseline-test",
+            filter_events=True,
+            min_event_amplitude=0.05,
+            max_event_amplitude=10.0,
+            min_event_fwhm=2,
+            max_event_fwhm=None,
+            labels_corpus=None,
+            on_disagreement="drop",
+            generate_report=False,
+            report_params={},
+            generate_plots=True,
+        )
+    finally:
+        cauldron._emit_baseline_plots = orig
+
+    assert len(calls) == 1, "baseline plots must be emitted exactly once"
+    assert calls[0]["baseline_output_dir"] == "/tmp/wizards-staff-baseline-test"
+    assert calls[0]["remove_outlier"] is False, (
+        "baseline plots must be drawn while _remove_outlier is False"
+    )
+    assert calls[0]["n_events_n0"] == 2, (
+        "baseline plots must see the un-cleaned (every-event) view"
+    )
+    # And the post-filter view is still restored afterwards.
+    assert orb._remove_outlier is True
+    assert len(shard._peak_amplitude_data[0]["Peak Amplitudes"]) == 1
+
+
+def test_save_baseline_skips_plots_by_default(cauldron):
+    """``generate_plots`` defaults to False, so the direct-call path keeps
+    the legacy CSV-only behavior and never touches the plotting helper."""
+    orb, shard = _make_filtered_orb(cauldron)
+    orb.save_results = lambda outdir, result_names=None: None
+
+    called = []
+    orig = cauldron._emit_baseline_plots
+    cauldron._emit_baseline_plots = lambda *a, **k: called.append(True)
+    try:
+        cauldron._save_pre_filter_baseline(
+            orb,
+            baseline_output_dir="/tmp/wizards-staff-baseline-test",
+            filter_events=True,
+            min_event_amplitude=0.05,
+            max_event_amplitude=10.0,
+            min_event_fwhm=2,
+            max_event_fwhm=None,
+            labels_corpus=None,
+            on_disagreement="drop",
+            generate_report=False,
+            report_params={},
+        )
+    finally:
+        cauldron._emit_baseline_plots = orig
+
+    assert called == [], (
+        "_emit_baseline_plots must not run when generate_plots is left "
+        "at its default (False)"
+    )
